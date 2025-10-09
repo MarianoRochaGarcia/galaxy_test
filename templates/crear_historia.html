@@ -1,0 +1,6 @@
+<form method="POST">
+    {% csrf_token %}
+    <label for="nombre_historia">Nombre de la historia:</label>
+    <input type="text" name="nombre_historia" id="nombre_historia" required>
+    <button type="submit">Crear Historia</button>
+</form>

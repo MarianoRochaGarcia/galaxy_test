@@ -1,0 +1,6 @@
+<h2>Subir archivo para FastQC</h2>
+<form method="POST" enctype="multipart/form-data">
+  {% csrf_token %}
+  <input type="file" name="archivo" required />
+  <button type="submit">Ejecutar FastQC</button>
+</form>
