@@ -1,0 +1,7 @@
+<form method="POST" enctype="multipart/form-data">
+    {% csrf_token %}
+    <label for="archivo">Selecciona un archivo FASTQ:</label><br>
+    <input type="file" name="archivo" id="archivo" required><br><br>
+    
+    <button type="submit">Subir a Galaxy</button>
+</form>

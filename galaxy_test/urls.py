@@ -34,4 +34,5 @@ urlpatterns = [
     path('ejecutar_fastqc', views.ejecutar_fastqc, name='ejecutar_fastqc'),
     path('crear_historia/', views.crear_historia, name="crear_historia"),
     path("subir_archivo/", views.subir_archivo, name="subir_archivo"),
+    path("ejecutar_trimmomatic/", views.fastqc_trimmomatic, name="ejecutar_trimmomatic")
 ]
