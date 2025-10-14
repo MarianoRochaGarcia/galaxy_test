@@ -1,6 +1,36 @@
-<h2>Subir archivo para FastQC</h2>
-<form method="POST" enctype="multipart/form-data">
-  {% csrf_token %}
-  <input type="file" name="archivo" required />
-  <button type="submit">Ejecutar FastQC</button>
-</form>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Ejecutar FastQC</title>
+</head>
+<body>
+    <h1>Ejecutar FastQC en Galaxy</h1>
+
+    <!-- Formulario para buscar la historia -->
+    <form method="post">
+        {% csrf_token %}
+        <label>Nombre de la historia:</label>
+        <input type="text" name="nombre_historia" value="{{ nombre_historia|default:'' }}" required>
+        <button type="submit">Buscar datasets</button>
+    </form>
+
+        <h2>Lista de Historias:</h2>
+    <ul>
+        {% for history in histories %}
+            <li>
+                <strong>Nombre:</strong> {{ history.name }} |
+                <strong>ID:</strong> {{ history.id }}
+            </li>
+        {% endfor %}
+    </ul>
+
+    {% if mensaje %}
+        <p style="color:green;">{{ mensaje }}</p>
+    {% endif %}
+
+    {% if error %}
+        <p style="color:red;">{{ error }}</p>
+    {% endif %}
+
+</body>
+</html>

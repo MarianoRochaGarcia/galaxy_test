@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import re
@@ -6,10 +7,15 @@ from django.conf import settings
 from django.http import JsonResponse
 from bioblend.galaxy import GalaxyInstance
 from django.shortcuts import render
+from decouple import config
 import requests
 
 GALAXY_URL = settings.GALAXY_URL
 GALAXY_API_KEY = settings.GALAXY_API_KEY
+
+headers = {
+    "x-api-key": GALAXY_API_KEY
+}
 
 def buscar_reportes_fastqc(request):
     """Buscar todos los reportes FastQC disponibles en todas las historias"""
@@ -289,66 +295,53 @@ def analizar_fastqc_tabla(request, dataset_id=None):
             "dataset_id": dataset_id
         }, status=500)
 
-headers = {
-    "x-api-key": GALAXY_API_KEY
-}
-import requests
-from decouple import config
-from django.shortcuts import render
-
-GALAXY_URL = config("GALAXY_URL", default="https://usegalaxy.eu")
-GALAXY_API_KEY = config("GALAXY_API_KEY")
-
-headers = {
-    "x-api-key": GALAXY_API_KEY,
-}
-
 def ejecutar_fastqc(request):
+    response = listar_historias(request)
+    histories = json.loads(response.content)
+
     if request.method == 'POST':
-        archivo = request.FILES['archivo']
+        nameHistory = request.POST.get('nombre_historia')
 
-        # 1️ Crear una historia en Galaxy
-        historia_resp = requests.post(
-            f"{GALAXY_URL}/api/histories",
-            headers=headers,
-            json={"name": "Análisis FastQC desde Django"}
-        )
-        historia_id = historia_resp.json()['id']
+        for history in histories:
+            if nameHistory == history["name"]:
+                history_id = history["id"]
 
-        # 2️ Subir el archivo a la historia
-        upload_resp = requests.post(
-            f"{GALAXY_URL}/api/tools",
-            headers=headers,
-            data={
-                'tool_id': 'upload1',
-                'history_id': historia_id,
-            },
-            files={'files_0|file_data': archivo}
-        )
-        upload_data = upload_resp.json()
-        dataset_id = upload_data["outputs"][0]["id"]
+        url = f"{GALAXY_URL}/api/histories/{history_id}/contents"
+        resp = requests.get(url, headers=headers)
+        datasets = resp.json()
+        
+        nameDataset = request.POST.get('nombreDataset')
 
-        # 3️ Ejecutar FastQC sobre el dataset
-        fastqc_resp = requests.post(
-            f"{GALAXY_URL}/api/tools",
-            headers=headers,
-            json={
-                "tool_id": "toolshed.g2.bx.psu.edu/repos/devteam/fastqc/fastqc/0.72",
-                "history_id": historia_id,
-                "inputs": {
-                    "input_file": {"src": "hda", "id": dataset_id}
-                }
-            }
-        )
+        if nameDataset:
+            for dataset in datasets:
+                if nameDataset == dataset["name"]:
+                    datasetID = dataset["id"]
 
-        job_info = fastqc_resp.json()
-        return render(request, "resultado_fastqc.html", {
-            "mensaje": "FastQC ejecutado correctamente.",
-            "historia_id": historia_id,
-            "job_info": job_info,
+                    fastqc_resp = requests.post(
+                        f"{GALAXY_URL}/api/tools",
+                        headers=headers,
+                        json={
+                            "tool_id": "toolshed.g2.bx.psu.edu/repos/devteam/fastqc/fastqc/0.72",
+                            "history_id": history_id,
+                            "inputs": {
+                                "input_file": {"src": "hda", "id": datasetID}
+                            }
+                        }
+                    )
+
+                    job_info = fastqc_resp.json()
+                    return render(request, "resultado_fastqc.html", {
+                        "mensaje": "FastQC ejecutado correctamente.",
+                        "history_id": history_id,
+                        "job_info": job_info,
+                    })
+
+        return render(request, "datasetsHistoria.html", {
+            "datasets": datasets,
+            "history_id": history_id,
+            "nombre_historia": nameHistory
         })
-
-    return render(request, "subir_fastqc.html")
+    return render(request, "subir_fastqc.html", {"histories": histories})
 
 def crear_historia(request):
     if request.method == "POST":
