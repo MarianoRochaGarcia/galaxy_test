@@ -1,0 +1,24 @@
+{% extends "layout/indexview.html" %}
+
+{% block 'title' %}
+Listar historias
+{% endblock 'title' %}
+
+{% block 'content' %}
+    <ul>
+
+        {% for historia in historias %}
+
+            <li class="p-5 rounded-2xl shadow-md hover:shadow-lg transition-shadow duration-200 border-l-4 bg-green-50 text-green-800">
+                <p class="uppercase class='text-lg font-bold hover:underline'">
+                    {{historia.name}}
+                </p>
+                <div>
+                    <p>ID: {{historia.id}}</p>
+                </div>
+            </li>
+        
+        {% endfor %}
+    </ul>
+        
+{% endblock 'content' %}

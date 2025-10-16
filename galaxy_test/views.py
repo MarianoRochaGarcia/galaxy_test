@@ -17,6 +17,10 @@ headers = {
     "x-api-key": GALAXY_API_KEY
 }
 
+def index(request):
+    
+    return render(request, 'index.html', {})
+
 def buscar_reportes_fastqc(request):
     """Buscar todos los reportes FastQC disponibles en todas las historias"""
     try:
