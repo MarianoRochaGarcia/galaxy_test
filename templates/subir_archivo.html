@@ -42,14 +42,10 @@ Subir archivo
         <ul class= "space-y-5 space-x-20">
             {% for history in historias %}
                 <li class="p-5 rounded-2xl shadow-md hover:shadow-lg transition-shadow duration-200 border-l-4 bg-blue-50 text-blue-800">
-                    <form method="post" action="{% url 'subir_trimmomatic' %}">
-                        {% csrf_token %}
-                        <input type="hidden" name="nombre_historia" value="{{ history.name }}">
-                        <button type="submit" class="text-blue-600 hover:underline bg-transparent border-none cursor-pointer p-0">
-                            {{ history.name }}
-                        </button>
-                    </form>
-                    <strong>ID:</strong> {{ history.id }}
+                    <label for="">{{history.name}}</label></br>
+                    <label for="">
+                        <strong>ID:</strong> {{ history.id }}
+                    </label>
                 </li>
             {% endfor %}
         </ul>
