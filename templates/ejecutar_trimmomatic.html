@@ -1,0 +1,34 @@
+{% extends "layout/indexview.html" %}
+
+{% block 'title' %}Ejecutar FastQC{% endblock 'title' %}
+
+{% block 'content' %}
+    <div class="max-w-4xl mx-auto px-4 py-8 space-y-2">
+        <h1 class="text-4xl font-bold text-gray-800 capitalize">Ejecutar Trimmomatic en Galaxy</h1>  
+        <p class="text-gray-600 text-xl">Selecciona una historia para ingresar a sus archivos</p>
+        <p class="text-gray-600 text-xl">Lista de Historias:</p>
+        <ul class= "space-y-5">
+            {% for history in histories %}
+                <li class="p-5 rounded-2xl shadow-md hover:shadow-lg transition-shadow duration-200 border-l-4 bg-blue-50 text-blue-800">
+                    <form method="post" action="{% url 'subir_trimmomatic' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="nombre_historia" value="{{ history.name }}">
+                        <button type="submit" class="text-blue-600 hover:underline bg-transparent border-none cursor-pointer p-0">
+                            {{ history.name }}
+                        </button>
+                    </form>
+                    <strong>ID:</strong> {{ history.id }}
+                </li>
+            {% endfor %}
+        </ul>
+    </div>
+
+
+    {% if mensaje %}
+        <p style="color:green;">{{ mensaje }}</p>
+    {% endif %}
+
+    {% if error %}
+        <p style="color:red;">{{ error }}</p>
+    {% endif %}
+{% endblock 'content' %}

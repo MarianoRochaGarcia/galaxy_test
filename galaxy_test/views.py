@@ -9,6 +9,7 @@ from bioblend.galaxy import GalaxyInstance
 from django.shortcuts import render
 from decouple import config
 import requests
+from django.shortcuts import redirect
 
 GALAXY_URL = settings.GALAXY_URL
 GALAXY_API_KEY = settings.GALAXY_API_KEY
@@ -364,6 +365,12 @@ def crear_historia(request):
     return render(request, 'crear_historia.html')
 
 def subir_archivo(request):
+    
+    response = listar_historias(request)
+    historias = json.loads(response.content)
+    context = {
+        'historias': historias
+    }
     if request.method == "POST":
         archivo = request.FILES["archivo"]
         history_id = request.POST["history_id"]
@@ -387,9 +394,9 @@ def subir_archivo(request):
             'dataset': dataset
         }
         
-        return render(request, "subida_exitosa.html", context)
+        return redirect('subirArchivo')
     
-    return render(request, "subir_archivo.html")
+    return render(request, "subir_archivo.html", context)
 
 def fastqc_trimmomatic(request):
     response = listar_historias(request)
@@ -438,10 +445,10 @@ def fastqc_trimmomatic(request):
                         "job_info": job_info,
                     })
 
-        return render(request, "datasetsHistoria.html", {
+        return render(request, "dataset_trimmomatic.html", {
             "datasets": datasets,
             "history_id": history_id,
             "nombre_historia": nameHistory
         })
 
-    return render(request, "subir_fastqc.html", {"histories": histories})
+    return render(request, "ejecutar_trimmomatic.html", {"histories": histories})

@@ -1,24 +1,25 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Ejecutar FastQC</title>
-</head>
-<body>
-    <h1>Ejecutar FastQC en Galaxy</h1>
+{% extends "layout/indexview.html" %}
+
+{% block 'title' %}Ejecutar FastQC{% endblock 'title' %}
+
+{% block 'content' %}
 
     <!-- Formulario para buscar la historia -->
-    <form method="post">
-        {% csrf_token %}
-        <label>Nombre de la historia:</label>
-        <input type="text" name="nombre_historia" value="{{ nombre_historia|default:'' }}" required>
-        <button type="submit">Buscar datasets</button>
-    </form>
-
-        <h2>Lista de Historias:</h2>
-    <ul>
+<div class="max-w-4xl mx-auto px-4 py-8 space-y-2">
+        <h1 class="text-4xl font-bold text-gray-800 capitalize">Ejecutar FastQC en Galaxy</h1>  
+        <h1 class="text-gray-600 text-xl">Selecciona una historia para ingresar a sus archivos</h1>
+        <h2 class="text-gray-600 text-xl">Lista de Historias:</h2>
+        <ul class= "space-y-5">
+    <ul class= "space-y-5">
         {% for history in histories %}
-            <li>
-                <strong>Nombre:</strong> {{ history.name }} |
+            <li class="p-5 rounded-2xl shadow-md hover:shadow-lg transition-shadow duration-200 border-l-4 bg-blue-50 text-blue-800">
+                <form method="post" action="{% url 'ejecutarFastqc' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="nombre_historia" value="{{ history.name }}">
+                    <button type="submit" class="text-blue-600 hover:underline bg-transparent border-none cursor-pointer p-0">
+                        {{ history.name }}
+                    </button>
+                </form>
                 <strong>ID:</strong> {{ history.id }}
             </li>
         {% endfor %}
@@ -31,6 +32,5 @@
     {% if error %}
         <p style="color:red;">{{ error }}</p>
     {% endif %}
-
-</body>
-</html>
+</div>
+{% endblock 'content' %}
