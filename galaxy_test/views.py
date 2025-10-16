@@ -392,67 +392,56 @@ def subir_archivo(request):
     return render(request, "subir_archivo.html")
 
 def fastqc_trimmomatic(request):
+    response = listar_historias(request)
+    histories = json.loads(response.content)
+
     if request.method == 'POST':
-        archivo = request.FILES['archivo']
+        nameHistory = request.POST.get('nombre_historia')
 
-        # Conectarse a Galaxy
-        gi = GalaxyInstance(settings.GALAXY_URL, key=settings.GALAXY_API_KEY)
+        for history in histories:
+            if nameHistory == history["name"]:
+                history_id = history["id"]
 
-
-        # Crear historia
-        historia = gi.histories.create_history(name="Pipeline FastQC + Trimmomatic")
-        history_id = historia['id']
-
-        # Guardar archivo temporalmente para subirlo
-        ruta_local = os.path.join(settings.MEDIA_ROOT, archivo.name)
-        with open(ruta_local, "wb+") as destino:
-            for chunk in archivo.chunks():
-                destino.write(chunk)
-
-        dataset = gi.tools.upload_file(
-            path=ruta_local,
-            history_id=history_id,
-            file_name=archivo.name
-        )
+        url = f"{GALAXY_URL}/api/histories/{history_id}/contents"
+        resp = requests.get(url, headers=headers)
+        datasets = resp.json()
         
-        dataset_id = dataset['outputs'][0]['id']
+        nameDataset = request.POST.get('nombreDataset')
 
-        # Ejecutar FastQC
-        fastqc_tool_id = 'toolshed.g2.bx.psu.edu/repos/devteam/fastqc/fastqc/0.72'
-        fastqc_job = gi.tools.run_tool(
-            history_id=history_id,
-            tool_id=fastqc_tool_id,
-            tool_inputs={'input_file': {'src': 'hda', 'id': dataset_id}}
-        )
+        if nameDataset:
+            for dataset in datasets:
+                if nameDataset == dataset["name"]:
+                    datasetID = dataset["id"]
 
-        # Ejecutar Trimmomatic
-        trimmomatic_tool_id = 'toolshed.g2.bx.psu.edu/repos/devteam/trimmomatic/trimmomatic/0.39'
-        trimmomatic_inputs = {
-            'input_file': {'src': 'hda', 'id': dataset_id},
-            'ILLUMINACLIP': {'value': 'adapters.fa:2:30:10'},
-            'SLIDINGWINDOW': {'value': '4:20'},
-            'MINLEN': {'value': 36}
-        }
-        trimmomatic_job = gi.tools.run_tool(
-            history_id=history_id,
-            tool_id=trimmomatic_tool_id,
-            tool_inputs=trimmomatic_inputs
-        )
+                    # 🔹 Ejecutar Trimmomatic en lugar de FastQC
+                    trimmomatic_resp = requests.post(
+                        f"{GALAXY_URL}/api/tools",
+                        headers=headers,
+                        json={
+                            "tool_id": "toolshed.g2.bx.psu.edu/repos/pjbriggs/trimmomatic/trimmomatic/0.39+galaxy2",
+                            "history_id": history_id,
+                            "inputs": {
+                                "input_reads": {"src": "hda", "id": datasetID},
+                                "phred": "phred33",
+                                "leading": {"leading": "3"},
+                                "trailing": {"trailing": "3"},
+                                "slidingwindow": {"slidingwindow": "4:15"},
+                                "minlen": {"minlen": "36"}
+                            }
+                        }
+                    )
 
-        #  Limpiar archivo temporal
-        os.remove(ruta_local)
+                    job_info = trimmomatic_resp.json()
+                    return render(request, "resultado_trimmomatic.html", {
+                        "mensaje": "Trimmomatic ejecutado correctamente.",
+                        "history_id": history_id,
+                        "job_info": job_info,
+                    })
 
-        # Mostrar resultados
-        context = {
-            "mensaje": "Pipeline FastQC + Trimmomatic ejecutado correctamente.",
-            "historia_id": history_id,
-            "fastqc_job": fastqc_job,
-            "trimmomatic_job": trimmomatic_job
-        }
+        return render(request, "datasetsHistoria.html", {
+            "datasets": datasets,
+            "history_id": history_id,
+            "nombre_historia": nameHistory
+        })
 
-        return render(request, "resultado_fastqc_trimmomatic.html", context)
-
-    return render(request, "subir_fastqc_trimmomatic.html")
-        
-
-    
+    return render(request, "subir_fastqc.html", {"histories": histories})
