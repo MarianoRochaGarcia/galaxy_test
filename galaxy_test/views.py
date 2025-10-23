@@ -2,7 +2,6 @@ import json
 import os
 import tempfile
 import re
-from bs4 import BeautifulSoup
 from django.conf import settings
 from django.http import JsonResponse
 from bioblend.galaxy import GalaxyInstance
@@ -22,146 +21,43 @@ def index(request):
     
     return render(request, 'index.html', {})
 
-def buscar_reportes_fastqc(request):
-    """Buscar todos los reportes FastQC disponibles en todas las historias"""
-    try:
-        gi = GalaxyInstance(settings.GALAXY_URL, key=settings.GALAXY_API_KEY)
-        historias = gi.histories.get_histories()
+# def buscar_reportes_fastqc(request):
+#     """Buscar todos los reportes FastQC disponibles en todas las historias"""
+#     try:
+#         gi = GalaxyInstance(settings.GALAXY_URL, key=settings.GALAXY_API_KEY)
+#         historias = gi.histories.get_histories()
         
-        reportes_encontrados = []
+#         reportes_encontrados = []
         
-        for historia in historias:
-            historia_id = historia["id"]
-            historia_nombre = historia.get("name", "Sin nombre")
+#         for historia in historias:
+#             historia_id = historia["id"]
+#             historia_nombre = historia.get("name", "Sin nombre")
             
-            # Obtener datasets de esta historia
-            datasets = gi.histories.show_history(historia_id, contents=True)
+#             # Obtener datasets de esta historia
+#             datasets = gi.histories.show_history(historia_id, contents=True)
             
-            for dataset in datasets:
-                nombre = dataset.get("name", "").lower()
-                extension = dataset.get("extension", "").lower()
+#             for dataset in datasets:
+#                 nombre = dataset.get("name", "").lower()
+#                 extension = dataset.get("extension", "").lower()
                 
-                # Buscar archivos FastQC HTML
-                if extension == "html" and ("fastqc" in nombre or "webpage" in nombre):
-                    reportes_encontrados.append({
-                        "dataset_id": dataset["id"],
-                        "nombre": dataset.get("name"),
-                        "historia_nombre": historia_nombre,
-                        "historia_id": historia_id,
-                        "estado": dataset.get("state", "unknown"),
-                        "extension": extension
-                    })
+#                 # Buscar archivos FastQC HTML
+#                 if extension == "html" and ("fastqc" in nombre or "webpage" in nombre):
+#                     reportes_encontrados.append({
+#                         "dataset_id": dataset["id"],
+#                         "nombre": dataset.get("name"),
+#                         "historia_nombre": historia_nombre,
+#                         "historia_id": historia_id,
+#                         "estado": dataset.get("state", "unknown"),
+#                         "extension": extension
+#                     })
         
-        return JsonResponse({
-            "total_reportes": len(reportes_encontrados),
-            "reportes": reportes_encontrados
-        }, json_dumps_params={'indent': 2})
+#         return JsonResponse({
+#             "total_reportes": len(reportes_encontrados),
+#             "reportes": reportes_encontrados
+#         }, json_dumps_params={'indent': 2})
         
-    except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
-
-def analizar_fastqc(request, dataset_id=None):
-    """Analizar un reporte FastQC específico y extraer métricas clave"""
-    
-    # Si no se especifica dataset_id, buscar el más reciente
-    if not dataset_id:
-        try:
-            gi = GalaxyInstance(settings.GALAXY_URL, key=settings.GALAXY_API_KEY)
-            historias = gi.histories.get_histories()
-            
-            # Buscar el primer reporte FastQC disponible
-            for historia in historias:
-                datasets = gi.histories.show_history(historia["id"], contents=True)
-                
-                for dataset in datasets:
-                    nombre = dataset.get("name", "").lower()
-                    extension = dataset.get("extension", "").lower()
-                    
-                    if extension == "html" and ("fastqc" in nombre or "webpage" in nombre):
-                        dataset_id = dataset["id"]
-                        break
-                
-                if dataset_id:
-                    break
-            
-            if not dataset_id:
-                return JsonResponse({"error": "No se encontraron reportes FastQC"}, status=404)
-                
-        except Exception as e:
-            return JsonResponse({"error": f"Error buscando reportes: {str(e)}"}, status=500)
-    
-    try:
-        gi = GalaxyInstance(settings.GALAXY_URL, key=settings.GALAXY_API_KEY)
-        
-        temp_dir = tempfile.gettempdir()
-        ruta_archivo = os.path.join(temp_dir, f"fastqc_report_{dataset_id}.html")
-        
-        print(f"Descargando FastQC a: {ruta_archivo}")
-        gi.datasets.download_dataset(dataset_id, file_path=ruta_archivo, use_default_filename=False)
-        
-        # Leer el archivo con manejo de codificación
-        try:
-            with open(ruta_archivo, "r", encoding="utf-8") as f:
-                contenido_html = f.read()
-        except UnicodeDecodeError:
-            with open(ruta_archivo, "r", encoding="latin-1") as f:
-                contenido_html = f.read()
-        
-        # Limpiar archivo temporal
-        try:
-            os.remove(ruta_archivo)
-        except:
-            pass
-        
-        # Parsear el HTML para extraer métricas
-        soup = BeautifulSoup(contenido_html, 'html.parser')
-        
-        # Extraer información clave del FastQC
-        metricas = {
-            "nombre_archivo": None,
-            "tipo_archivo" : None,
-            "encoding": None,
-            "total_secuencias": None,
-            "longitud_secuencias": None,
-            "contenido_gc": None,
-            "calidad_promedio": None,
-        }
-
-        try:
-            tablas = soup.find_all('table')
-            for tabla in tablas:
-                filas = tabla.find_all('tr')
-                for fila in filas:
-                    celdas = fila.find_all('td')
-                    if len(celdas) >= 2:
-                        campo = celdas[0].text.strip().lower()
-                        valor = celdas[1].text.strip()
-                        if 'filename' in campo:
-                            metricas["nombre_archivo"] = valor
-                        if 'file type' in campo:
-                            metricas["tipo_archivo"] = valor
-                        if 'encoding' in campo:
-                            metricas["encoding"] = valor
-                        if 'total sequences' in campo:
-                            metricas["total_secuencias"] = valor
-                        elif 'sequence length' in campo:
-                            metricas["longitud_secuencias"] = valor
-                        elif '%gc' in campo:
-                            metricas["contenido_gc"] = valor
-        except:
-            pass
-        
-        return JsonResponse({
-            "dataset_id": dataset_id,
-            "metricas": metricas,
-            "procesamiento": "exitoso"
-        }, json_dumps_params={'indent': 2})
-        
-    except Exception as e:
-        return JsonResponse({
-            "error": f"Error procesando FastQC: {str(e)}",
-            "dataset_id": dataset_id
-        }, status=500)
+#     except Exception as e:
+#         return JsonResponse({"error": str(e)}, status=500)
         
 def listar_historias(request):
     
@@ -184,121 +80,6 @@ def listar_historias(request):
     
     return JsonResponse(info_historias, safe=False)
 
-def ver_historia_bioblend(request, history_id):
-    gi = GalaxyInstance(settings.GALAXY_URL, key=settings.GALAXY_API_KEY)
-    datasets = gi.histories.show_history(history_id, contents=True)
-    
-    fastqc_datasets = [
-        ds for ds in datasets
-        if 'FASTQC' in ds.get('name', '')
-    ]
-    
-    return JsonResponse(fastqc_datasets, safe=False)
-
-def analizar_fastqc_tabla(request, dataset_id=None):
-
-    """Analizar un reporte FastQC específico y extraer métricas clave"""
-    
-    # Si no se especifica dataset_id, buscar el más reciente
-    if not dataset_id:
-        try:
-            gi = GalaxyInstance(settings.GALAXY_URL, key=settings.GALAXY_API_KEY)
-            historias = gi.histories.get_histories()
-            
-            # Buscar el primer reporte FastQC disponible
-            for historia in historias:
-                datasets = gi.histories.show_history(historia["id"], contents=True)
-                
-                for dataset in datasets:
-                    nombre = dataset.get("name", "").lower()
-                    extension = dataset.get("extension", "").lower()
-                    
-                    if extension == "html" and ("fastqc" in nombre or "webpage" in nombre):
-                        dataset_id = dataset["id"]
-                        break
-                
-                if dataset_id:
-                    break
-            
-            if not dataset_id:
-                return JsonResponse({"error": "No se encontraron reportes FastQC"}, status=404)
-                
-        except Exception as e:
-            return JsonResponse({"error": f"Error buscando reportes: {str(e)}"}, status=500)
-    
-    try:
-        gi = GalaxyInstance(settings.GALAXY_URL, key=settings.GALAXY_API_KEY)
-        
-        temp_dir = tempfile.gettempdir()
-        ruta_archivo = os.path.join(temp_dir, f"fastqc_report_{dataset_id}.html")
-        
-        print(f"Descargando FastQC a: {ruta_archivo}")
-        gi.datasets.download_dataset(dataset_id, file_path=ruta_archivo, use_default_filename=False)
-        
-        # Leer el archivo con manejo de codificación
-        try:
-            with open(ruta_archivo, "r", encoding="utf-8") as f:
-                contenido_html = f.read()
-        except UnicodeDecodeError:
-            with open(ruta_archivo, "r", encoding="latin-1") as f:
-                contenido_html = f.read()
-        
-        # Limpiar archivo temporal
-        try:
-            os.remove(ruta_archivo)
-        except:
-            pass
-        
-        # Parsear el HTML para extraer métricas
-        soup = BeautifulSoup(contenido_html, 'html.parser')
-        
-        # Extraer información clave del FastQC
-        metricas = {
-            "dataset_id" :dataset_id,
-            "nombre_archivo": None,
-            "tipo_archivo" : None,
-            "encoding": None,
-            "total_secuencias": None,
-            "longitud_secuencias": None,
-            "contenido_gc": None,
-            "calidad_promedio": None,
-        }
-
-        try:
-            tablas = soup.find_all('table')
-            for tabla in tablas:
-                filas = tabla.find_all('tr')
-                for fila in filas:
-                    celdas = fila.find_all('td')
-                    if len(celdas) >= 2:
-                        campo = celdas[0].text.strip().lower()
-                        valor = celdas[1].text.strip()
-                        if 'filename' in campo:
-                            metricas["nombre_archivo"] = valor
-                        if 'file type' in campo:
-                            metricas["tipo_archivo"] = valor
-                        if 'encoding' in campo:
-                            metricas["encoding"] = valor
-                        if 'total sequences' in campo:
-                            metricas["total_secuencias"] = valor
-                        elif 'sequence length' in campo:
-                            metricas["longitud_secuencias"] = valor
-                        elif '%gc' in campo:
-                            metricas["contenido_gc"] = valor
-        except:
-            pass
-        
-        context = {
-            'metricas': metricas
-        }
-        
-        return render(request, 'analizar_fastqc_tabla.html', context)
-        
-    except Exception as e:
-        return JsonResponse({
-            "error": f"Error procesando FastQC: {str(e)}",
-            "dataset_id": dataset_id
-        }, status=500)
 
 def ejecutar_fastqc(request):
     response = listar_historias(request)
@@ -346,7 +127,7 @@ def ejecutar_fastqc(request):
             "history_id": history_id,
             "nombre_historia": nameHistory
         })
-    return render(request, "subir_fastqc.html", {"histories": histories})
+    return render(request, "ejecutar_herramienta/ejecutar_fastqc.html", {"histories": histories})
 
 def crear_historia(request):
     if request.method == "POST":
@@ -398,7 +179,7 @@ def subir_archivo(request):
     
     return render(request, "subir_archivo.html", context)
 
-def fastqc_trimmomatic(request):
+def ejecutar_trimmomatic(request):
     response = listar_historias(request)
     histories = json.loads(response.content)
 
@@ -451,4 +232,4 @@ def fastqc_trimmomatic(request):
             "nombre_historia": nameHistory
         })
 
-    return render(request, "ejecutar_trimmomatic.html", {"histories": histories})
+    return render(request, "ejecutar_herramienta/ejecutar_trimmomatic.html", {"histories": histories})
