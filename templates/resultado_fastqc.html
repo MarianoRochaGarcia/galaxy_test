@@ -1,4 +1,34 @@
-<h2>Resultado del análisis FastQC</h2>
-<p>{{ mensaje }}</p>
-<p><strong>Historia ID:</strong> {{ historia_id }}</p>
-<p><strong>Job Info:</strong> {{ job_info }}</p>
+<h2>Resultados del Pipeline</h2>
+
+<h3>Historia ID: {{ history_id }}</h3>
+
+<!-- FastQC -->
+<h3>🔹 FastQC</h3>
+<p><strong>Job ID:</strong> {{ job_results.fastqc.fastqc_id }}</p>
+<p><strong>Datasets generados:</strong></p>
+<ul>
+{% for dataset in job_results.fastqc.fastqc_outputs %}
+    <li>{{ dataset.name }} (ID: {{ dataset.id }}, Estado: {{ dataset.state }})</li>
+{% endfor %}
+</ul>
+
+<!-- Trimmomatic -->
+<h3>🔹 Trimmomatic</h3>
+<p><strong>Job ID:</strong> {{ job_results.trimmomatic.trimmomatic_id }}</p>
+<p><strong>Dataset principal ID:</strong> {{ job_results.trimmomatic.trimmomatic_output_id }}</p>
+<p><strong>Todos los datasets generados:</strong></p>
+<ul>
+{% for dataset in job_results.trimmomatic.trimmomatic_output %}
+    <li>{{ dataset.name }} (ID: {{ dataset.id }}, Estado: {{ dataset.state }})</li>
+{% endfor %}
+</ul>
+
+<!-- Bowtie2 -->
+<h3>🔹 Bowtie2</h3>
+<p><strong>Job ID:</strong> {{ job_results.bowtie.bowtie_id }}</p>
+<p><strong>Datasets generados:</strong></p>
+<ul>
+{% for dataset in job_results.bowtie.bowtie_outputs %}
+    <li>{{ dataset.name }} (ID: {{ dataset.id }}, Estado: {{ dataset.state }})</li>
+{% endfor %}
+</ul>

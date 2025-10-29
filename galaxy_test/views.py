@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import re
+import time
 from django.conf import settings
 from django.http import JsonResponse
 from bioblend.galaxy import GalaxyInstance
@@ -80,55 +81,6 @@ def listar_historias(request):
     
     return JsonResponse(info_historias, safe=False)
 
-
-def ejecutar_fastqc(request):
-    response = listar_historias(request)
-    histories = json.loads(response.content)
-
-    if request.method == 'POST':
-        nameHistory = request.POST.get('nombre_historia')
-
-        for history in histories:
-            if nameHistory == history["name"]:
-                history_id = history["id"]
-
-        url = f"{GALAXY_URL}/api/histories/{history_id}/contents"
-        resp = requests.get(url, headers=headers)
-        datasets = resp.json()
-        
-        nameDataset = request.POST.get('nombreDataset')
-
-        if nameDataset:
-            for dataset in datasets:
-                if nameDataset == dataset["name"]:
-                    datasetID = dataset["id"]
-
-                    fastqc_resp = requests.post(
-                        f"{GALAXY_URL}/api/tools",
-                        headers=headers,
-                        json={
-                            "tool_id": "toolshed.g2.bx.psu.edu/repos/devteam/fastqc/fastqc/0.72",
-                            "history_id": history_id,
-                            "inputs": {
-                                "input_file": {"src": "hda", "id": datasetID}
-                            }
-                        }
-                    )
-
-                    job_info = fastqc_resp.json()
-                    return render(request, "resultado_fastqc.html", {
-                        "mensaje": "FastQC ejecutado correctamente.",
-                        "history_id": history_id,
-                        "job_info": job_info,
-                    })
-
-        return render(request, "datasetsHistoria.html", {
-            "datasets": datasets,
-            "history_id": history_id,
-            "nombre_historia": nameHistory
-        })
-    return render(request, "ejecutar_herramienta/ejecutar_fastqc.html", {"histories": histories})
-
 def crear_historia(request):
     if request.method == "POST":
         
@@ -168,68 +120,161 @@ def subir_archivo(request):
             history_id=history_id,
             file_name=archivo.name
         )
-
-        os.remove(ruta_local)
         
         context = {
             'dataset': dataset
         }
+
+        os.remove(ruta_local)
         
-        return redirect('subirArchivo')
+        return redirect('subir_archivo')
     
     return render(request, "subir_archivo.html", context)
 
-def ejecutar_trimmomatic(request):
-    response = listar_historias(request)
-    histories = json.loads(response.content)
+def esperar_finalizacion(gi, job_id, intervalo=10):
+    while True:
+        job = gi.jobs.show_job(job_id)
+        estado = job.get("state")
+        if estado in ["ok", "error"]:
+            break
+        time.sleep(intervalo)
+
+def ejecutar_fastqc(history_id, datasetID):
+        
+    gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
+
+    fastqc_job = gi.tools.run_tool(
+        history_id=history_id,
+        tool_id="toolshed.g2.bx.psu.edu/repos/devteam/fastqc/fastqc/0.72",
+        tool_inputs={
+            "input_file": {"src": "hda", "id": datasetID}
+        }
+    )
+    fastqc_job_id = fastqc_job["jobs"][0]["id"]
+    esperar_finalizacion(gi, fastqc_job_id)
+
+    job_info = gi.jobs.show_job(fastqc_job_id)
+
+    outputs_dict  = job_info.get("outputs", [])
+    fastqc_outputs = list(outputs_dict.values())
+
+    return fastqc_job_id, fastqc_outputs
+
+def ejecutar_trimmomatic(history_id, datasetID):    
+
+    gi = GalaxyInstance(url= GALAXY_URL, key=GALAXY_API_KEY)  
+
+    trimmomatic_job = gi.tools.run_tool(
+        history_id=history_id,
+        tool_id="toolshed.g2.bx.psu.edu/repos/pjbriggs/trimmomatic/trimmomatic/0.39+galaxy2",
+        tool_inputs={
+            "input_file": {"src": "hda", "id": datasetID}
+        }
+    )
+
+    trimmomatic_job_id = trimmomatic_job["jobs"][0]["id"]
+    esperar_finalizacion(gi, trimmomatic_job_id)
+
+    job_info = gi.jobs.show_job(trimmomatic_job_id)
+
+    # Extraer los datasets de salida directamente del job
+    outputs_dict  = job_info.get("outputs", [])
+    output_datasets = list(outputs_dict.values())
+
+    if not output_datasets:
+        raise Exception("El trabajo terminó, pero no se encontraron datasets de salida en Galaxy.")
+
+    trimmomatic_output_id = output_datasets[0]["id"]
+
+    return trimmomatic_job_id, trimmomatic_output_id, output_datasets
+
+def ejecutar_bowtie(history_id, trimmomatic_output):
+    
+    gi = GalaxyInstance(url= GALAXY_URL, key=GALAXY_API_KEY)  
+
+    bowtie_job = gi.tools.run_tool(
+        history_id=history_id,
+        tool_id="toolshed.g2.bx.psu.edu/repos/devteam/bowtie2/bowtie2/2.5.1",
+        tool_inputs={
+            "fastq_input": {"src": "hda", "id": trimmomatic_output}
+        }
+    )
+    bowtie_job_id = bowtie_job["jobs"][0]["id"]
+    esperar_finalizacion(gi, bowtie_job_id)
+
+    # Obtener la salida del alineamiento de Bowtie2
+    bowtie_output = bowtie_job["outputs"][0]["id"]
+
+    return bowtie_job_id, bowtie_output
+
+def ejecutar_fastq(request):
+
+    gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
+
+    histories = gi.histories.get_histories()
 
     if request.method == 'POST':
         nameHistory = request.POST.get('nombre_historia')
+        if not nameHistory:
+            return render(request, "error.html", {"mensaje": "No se seleccionó ninguna historia."})
 
+        # Buscar historia seleccionada
+        history_id = None
         for history in histories:
-            if nameHistory == history["name"]:
+            if history["name"] == nameHistory:
                 history_id = history["id"]
+                break
 
-        url = f"{GALAXY_URL}/api/histories/{history_id}/contents"
-        resp = requests.get(url, headers=headers)
-        datasets = resp.json()
+        if not history_id:
+            return render(request, "error.html", {"mensaje": "Historia no encontrada."})
+
+        # Obtener datasets dentro de la historia
+        datasets = gi.histories.show_history(history_id, contents=True)
+        IdDataset = request.POST.get('id_dataset')
+
+        if not IdDataset:
+            # Mostrar datasets disponibles si no se seleccionó ninguno
+            return render(request, "datasetsHistoria.html", {
+                "datasets": datasets,
+                "history_id": history_id,
+                "nombre_historia": nameHistory
+            })
+
+        # Buscar dataset seleccionado
+        datasetID = None
+        for dataset in datasets:
+            if dataset['id'] == IdDataset:
+                datasetID = IdDataset
+
+        if not datasetID:
+            return render(request, "error.html", {"mensaje": "Dataset no encontrado."})
         
-        nameDataset = request.POST.get('nombreDataset')
+        results = {}
+        
+        fastqc_id, fastqc_outputs = ejecutar_fastqc(history_id, datasetID)
+        results["fastqc"] = {
+            "fastqc_id" : fastqc_id,
+            "fastqc_outputs" : fastqc_outputs
+        }
 
-        if nameDataset:
-            for dataset in datasets:
-                if nameDataset == dataset["name"]:
-                    datasetID = dataset["id"]
+        trimmomatic_id, trimmomatic_output_id, trimmomatic_output = ejecutar_trimmomatic(history_id, datasetID)
+        results["trimmomatic"] = {
+            "trimmomatic_id": trimmomatic_id,
+            "trimmomatic_output_id": trimmomatic_output_id,
+            "trimmomatic_output": trimmomatic_output
+        }
 
-                    # 🔹 Ejecutar Trimmomatic en lugar de FastQC
-                    trimmomatic_resp = requests.post(
-                        f"{GALAXY_URL}/api/tools",
-                        headers=headers,
-                        json={
-                            "tool_id": "toolshed.g2.bx.psu.edu/repos/pjbriggs/trimmomatic/trimmomatic/0.39+galaxy2",
-                            "history_id": history_id,
-                            "inputs": {
-                                "input_reads": {"src": "hda", "id": datasetID},
-                                "phred": "phred33",
-                                "leading": {"leading": "3"},
-                                "trailing": {"trailing": "3"},
-                                "slidingwindow": {"slidingwindow": "4:15"},
-                                "minlen": {"minlen": "36"}
-                            }
-                        }
-                    )
+        bowtie_id, bowtie_outputs = ejecutar_bowtie(history_id, trimmomatic_output_id)
+        results["bowtie"] = {
+            "bowtie_id": bowtie_id,
+            "bowtie_outputs":bowtie_outputs
 
-                    job_info = trimmomatic_resp.json()
-                    return render(request, "resultado_trimmomatic.html", {
-                        "mensaje": "Trimmomatic ejecutado correctamente.",
-                        "history_id": history_id,
-                        "job_info": job_info,
-                    })
+        }
 
-        return render(request, "dataset_trimmomatic.html", {
-            "datasets": datasets,
-            "history_id": history_id,
-            "nombre_historia": nameHistory
+        return render(request, "resultado_fastqc.html",{
+            "history_id": history_id, 
+            "job_results" : results
         })
 
-    return render(request, "ejecutar_herramienta/ejecutar_trimmomatic.html", {"histories": histories})
+    
+    return render(request, "ejecutar_herramienta/ejecutar_fastq.html", {"histories": histories})

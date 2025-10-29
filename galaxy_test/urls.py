@@ -27,8 +27,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', views.index, name='index'),
     path("listar_historias/", views.listar_historias, name="listar_historias"),
-    path('ejecutar_fastqc/', views.ejecutar_fastqc, name='ejecutar_fastqc'),
+    path('ejecutar_fastq/', views.ejecutar_fastq, name='ejecutar_fastq'),
     path('crear_historia/', views.crear_historia, name="crear_historia"),
-    path("subir_archivo/", views.subir_archivo, name="subir_archivo"),
-    path("ejecutar_trimmomatic/", views.ejecutar_trimmomatic, name="subir_trimmomatic")
+    path("subir_archivo/", views.subir_archivo, name="subir_archivo")
 ]
