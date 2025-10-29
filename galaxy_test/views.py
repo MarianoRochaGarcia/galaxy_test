@@ -175,7 +175,7 @@ def subir_archivo(request):
             'dataset': dataset
         }
         
-        return redirect('subirArchivo')
+        return redirect('subir_archivo')
     
     return render(request, "subir_archivo.html", context)
 
