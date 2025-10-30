@@ -27,7 +27,9 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', views.index, name='index'),
     path("listar_historias/", views.listar_historias, name="listar_historias"),
-    path('ejecutar_fastq/', views.ejecutar_fastq, name='ejecutar_fastq'),
     path('crear_historia/', views.crear_historia, name="crear_historia"),
-    path("subir_archivo/", views.subir_archivo, name="subir_archivo")
+    path("subir_archivo/", views.subir_archivo, name="subir_archivo"),
+    path('ejecutar_workflow/', views.ejecutar_workflow, name='ejecutar_workflow'),
+    path('show_dataset/<str:id>/', views.show_dataset, name='show_dataset'),
+    path('get_jobs/<str:id>', views.get_jobs, name="get_jobs"),
 ]

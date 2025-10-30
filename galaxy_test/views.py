@@ -10,6 +10,7 @@ from django.shortcuts import render
 from decouple import config
 import requests
 from django.shortcuts import redirect
+from bs4 import BeautifulSoup
 
 GALAXY_URL = settings.GALAXY_URL
 GALAXY_API_KEY = settings.GALAXY_API_KEY
@@ -22,64 +23,24 @@ def index(request):
     
     return render(request, 'index.html', {})
 
-# def buscar_reportes_fastqc(request):
-#     """Buscar todos los reportes FastQC disponibles en todas las historias"""
-#     try:
-#         gi = GalaxyInstance(settings.GALAXY_URL, key=settings.GALAXY_API_KEY)
-#         historias = gi.histories.get_histories()
-        
-#         reportes_encontrados = []
-        
-#         for historia in historias:
-#             historia_id = historia["id"]
-#             historia_nombre = historia.get("name", "Sin nombre")
-            
-#             # Obtener datasets de esta historia
-#             datasets = gi.histories.show_history(historia_id, contents=True)
-            
-#             for dataset in datasets:
-#                 nombre = dataset.get("name", "").lower()
-#                 extension = dataset.get("extension", "").lower()
-                
-#                 # Buscar archivos FastQC HTML
-#                 if extension == "html" and ("fastqc" in nombre or "webpage" in nombre):
-#                     reportes_encontrados.append({
-#                         "dataset_id": dataset["id"],
-#                         "nombre": dataset.get("name"),
-#                         "historia_nombre": historia_nombre,
-#                         "historia_id": historia_id,
-#                         "estado": dataset.get("state", "unknown"),
-#                         "extension": extension
-#                     })
-        
-#         return JsonResponse({
-#             "total_reportes": len(reportes_encontrados),
-#             "reportes": reportes_encontrados
-#         }, json_dumps_params={'indent': 2})
-        
-#     except Exception as e:
-#         return JsonResponse({"error": str(e)}, status=500)
-        
-def listar_historias(request):
+def obtener_historias():
     
-    # Listar todas las historias
+    #Crear conexion con galaxy
     gi = GalaxyInstance(settings.GALAXY_URL, key=settings.GALAXY_API_KEY)
     
-    # Obtener todas las historias disponibles
-    historias = gi.histories.get_histories()
+    # Filtrar los parametros que se requieren
+    historias = gi.histories.get_histories(keys=['id', 'name', 'count', 'update_time'])
     
-    # Filtrar informacion
-    info_historias = [
-            {
-                "id": h["id"],
-                "name": h["name"],
-                "datasets": h.get("count"),
-                "last_update": h.get("update_time")
-            }
-        for h in historias
-    ]
+    return historias
+
+def listar_historias(request):
     
-    return JsonResponse(info_historias, safe=False)
+    # Obtener historias con metodo auxiliar
+    historias = obtener_historias()
+    
+    # Conertimos a Json para facilitar su manipulacion
+    return JsonResponse(historias, safe=False)
+
 
 def crear_historia(request):
     if request.method == "POST":
@@ -97,26 +58,30 @@ def crear_historia(request):
         
     return render(request, 'crear_historia.html')
 
+
 def subir_archivo(request):
     
-    response = listar_historias(request)
-    historias = json.loads(response.content)
-    context = {
-        'historias': historias
-    }
     if request.method == "POST":
         archivo = request.FILES["archivo"]
         history_id = request.POST["history_id"]
         
-        ruta_local = os.path.join(settings.MEDIA_ROOT, archivo.name)
-        with open(ruta_local, "wb+") as destino:
+        # Crear la ruta temporal 
+        temp_dir = tempfile.gettempdir()
+        
+        # Une la ruta correctamente
+        ruta_temp = os.path.join(temp_dir, archivo.name)
+        
+        # Guardar el archivo temporalmente en el sistema
+        with open(ruta_temp, "wb+") as destino:
             for chunk in archivo.chunks():
                 destino.write(chunk)
-            
+                
+        # Crear la instancia de Galaxy
         gi = GalaxyInstance(settings.GALAXY_URL, settings.GALAXY_API_KEY)
 
+        # Subir el archivo a Galaxy
         dataset = gi.tools.upload_file(
-            path=ruta_local,
+            path=ruta_temp,
             history_id=history_id,
             file_name=archivo.name
         )
@@ -125,11 +90,18 @@ def subir_archivo(request):
             'dataset': dataset
         }
 
-        os.remove(ruta_local)
+        # Eliminar el archivo temporal despues de subirlo
+        os.remove(ruta_temp)
         
         return redirect('subir_archivo')
     
+    historias = obtener_historias()
+    context = {
+        'historias': historias
+    }
+    
     return render(request, "subir_archivo.html", context)
+
 
 def esperar_finalizacion(gi, job_id, intervalo=10):
     while True:
@@ -207,7 +179,8 @@ def ejecutar_bowtie(history_id, trimmomatic_output):
 
     return bowtie_job_id, bowtie_output
 
-def ejecutar_fastq(request):
+# Metodo para ejecutar Fastqc, Trimmomatic y Bowtie
+def ejecutar_workflow(request):
 
     gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
 
@@ -277,4 +250,18 @@ def ejecutar_fastq(request):
         })
 
     
-    return render(request, "ejecutar_herramienta/ejecutar_fastq.html", {"histories": histories})
+    return render(request, "ejecutar_herramienta/ejecutar_workflow.html", {"histories": histories})
+
+def show_dataset(request, id):
+    
+    gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
+    dataset_info = gi.datasets.show_dataset(id)
+    
+    return JsonResponse(dataset_info)
+    
+def get_jobs(request, id):
+    
+    gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
+    jobs = gi.jobs.get_metrics(id)
+    
+    return JsonResponse(jobs, safe=False)
