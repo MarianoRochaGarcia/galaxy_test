@@ -31,8 +31,14 @@
             {% csrf_token %}
             <!-- Mantener la historia seleccionada -->
             <input type="hidden" name="nombre_historia" value="{{ nombre_historia }}">
-            <label>Id del dataset:</label>
+            <label>Id del dataset1:</label>
             <input type="text" name="id_dataset" required>
+
+            <label>Id del dataset2:</label>
+            <input type="text" name="id_dataset2" required>
+
+            <label>Id del genoma:</label>
+            <input type="text" name="id_genoma" required>
             <button type="submit">Ejecutar Proceso</button>
         </form>
     {% else %}

@@ -111,7 +111,7 @@ def esperar_finalizacion(gi, job_id, intervalo=10):
             break
         time.sleep(intervalo)
 
-def ejecutar_fastqc(history_id, datasetID):
+def ejecutar_fastqc(history_id, datasetID_R1, datasetID_R2):
         
     gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
 
@@ -119,7 +119,9 @@ def ejecutar_fastqc(history_id, datasetID):
         history_id=history_id,
         tool_id="toolshed.g2.bx.psu.edu/repos/devteam/fastqc/fastqc/0.72",
         tool_inputs={
-            "input_file": {"src": "hda", "id": datasetID}
+            "analysis_type": "paired",
+            "left_input": {"src": "hda", "id": datasetID_R1},
+            "right_input": {"src": "hda", "id": datasetID_R2},
         }
     )
     fastqc_job_id = fastqc_job["jobs"][0]["id"]
@@ -132,7 +134,7 @@ def ejecutar_fastqc(history_id, datasetID):
 
     return fastqc_job_id, fastqc_outputs
 
-def ejecutar_trimmomatic(history_id, datasetID):    
+def ejecutar_trimmomatic(history_id, unaligned_R1, unaligned_R2):    
 
     gi = GalaxyInstance(url= GALAXY_URL, key=GALAXY_API_KEY)  
 
@@ -140,7 +142,9 @@ def ejecutar_trimmomatic(history_id, datasetID):
         history_id=history_id,
         tool_id="toolshed.g2.bx.psu.edu/repos/pjbriggs/trimmomatic/trimmomatic/0.39+galaxy2",
         tool_inputs={
-            "input_file": {"src": "hda", "id": datasetID}
+            "paired_or_single": "paired",
+            "left_input1": {"src": "hda", "id": unaligned_R1},
+            "right_input1": {"src": "hda", "id": unaligned_R2},
         }
     )
 
@@ -150,34 +154,47 @@ def ejecutar_trimmomatic(history_id, datasetID):
     job_info = gi.jobs.show_job(trimmomatic_job_id)
 
     # Extraer los datasets de salida directamente del job
-    outputs_dict  = job_info.get("outputs", [])
-    output_datasets = list(outputs_dict.values())
+    outputs  = job_info.get("outputs", {})
+    output_datasets = list(outputs.values())
+    outputs_dict = {k: v for k, v in outputs.items()}
 
-    if not output_datasets:
-        raise Exception("El trabajo terminó, pero no se encontraron datasets de salida en Galaxy.")
+    unpaired_R1 = outputs.get("output_unpaired_forward", {}).get("id")
+    unpaired_R2 = outputs.get("output_unpaired_reverse", {}).get("id")
 
-    trimmomatic_output_id = output_datasets[0]["id"]
+    return trimmomatic_job_id, output_datasets, unpaired_R1, unpaired_R2
 
-    return trimmomatic_job_id, trimmomatic_output_id, output_datasets
+def ejecutar_bowtie(history_id, datasetID_R1, datasetID_R2, genomaId):
 
-def ejecutar_bowtie(history_id, trimmomatic_output):
-    
     gi = GalaxyInstance(url= GALAXY_URL, key=GALAXY_API_KEY)  
 
     bowtie_job = gi.tools.run_tool(
         history_id=history_id,
-        tool_id="toolshed.g2.bx.psu.edu/repos/devteam/bowtie2/bowtie2/2.5.1",
-        tool_inputs={
-            "fastq_input": {"src": "hda", "id": trimmomatic_output}
+        tool_id="toolshed.g2.bx.psu.edu/repos/devteam/bowtie2/bowtie2/2.5.3+galaxy1",
+        tool_inputs = {
+            "paired_or_single": "paired",
+            "left_input": {"src": "hda", "id": datasetID_R1},
+            "right_input": {"src": "hda", "id": datasetID_R2},
+            "reference_genome_source": "history",
+            "reference_genome": {"src": "hda", "id": genomaId},
+            "write_unaligned_reads": True,
+            "unaligned_reads_filename": "unaligned_reads",
+            "write_aligned_reads": True,
+            "aligned_reads_filename": "aligned_reads.sam"  
         }
     )
     bowtie_job_id = bowtie_job["jobs"][0]["id"]
     esperar_finalizacion(gi, bowtie_job_id)
 
-    # Obtener la salida del alineamiento de Bowtie2
-    bowtie_output = bowtie_job["outputs"][0]["id"]
+    job_info = gi.jobs.show_job(bowtie_job_id)
+    outputs = job_info.get("outputs", {})
 
-    return bowtie_job_id, bowtie_output
+    outputs_dict = {k: v for k, v in outputs.items()}
+
+    #Se filtra los dos unaligned
+    unaligned_R1 = outputs_dict.get("unaligned_reads_1")
+    unaligned_R2 = outputs_dict.get("unaligned_reads_2")
+
+    return bowtie_job_id, outputs_dict, unaligned_R1, unaligned_R2
 
 # Metodo para ejecutar Fastqc, Trimmomatic y Bowtie
 def ejecutar_workflow(request):
@@ -203,9 +220,11 @@ def ejecutar_workflow(request):
 
         # Obtener datasets dentro de la historia
         datasets = gi.histories.show_history(history_id, contents=True)
-        IdDataset = request.POST.get('id_dataset')
+        idDataset = request.POST.get('id_dataset')
+        idDataset2 = request.POST.get('id_dataset2')
+        idGenoma = request.POST.get('id_genoma')
 
-        if not IdDataset:
+        if not (idDataset and idDataset2 and idGenoma):
             # Mostrar datasets disponibles si no se seleccionó ninguno
             return render(request, "datasetsHistoria.html", {
                 "datasets": datasets,
@@ -215,33 +234,44 @@ def ejecutar_workflow(request):
 
         # Buscar dataset seleccionado
         datasetID = None
-        for dataset in datasets:
-            if dataset['id'] == IdDataset:
-                datasetID = IdDataset
+        datasetID2 =None
+        genomaId = None
 
-        if not datasetID:
+        for dataset in datasets:
+            if dataset['id'] == idDataset:
+                datasetID = idDataset
+            elif dataset['id'] == idDataset2:
+                datasetID2 = idDataset2
+            elif dataset['id'] == idGenoma:
+                genomaId = idGenoma
+
+        if not (datasetID and datasetID2 and genomaId):
             return render(request, "error.html", {"mensaje": "Dataset no encontrado."})
         
         results = {}
-        
-        fastqc_id, fastqc_outputs = ejecutar_fastqc(history_id, datasetID)
+
+        fastqc_id, fastqc_outputs = ejecutar_fastqc(history_id, datasetID, datasetID2)
         results["fastqc"] = {
             "fastqc_id" : fastqc_id,
             "fastqc_outputs" : fastqc_outputs
         }
 
-        trimmomatic_id, trimmomatic_output_id, trimmomatic_output = ejecutar_trimmomatic(history_id, datasetID)
+        bowtie_id, bowtie_outputs, unaligned_R1, unaligned_R2 = ejecutar_bowtie(history_id, datasetID, datasetID2, genomaId)
+        results["bowtie"] = {
+            "bowtie_id": bowtie_id,
+            "bowtie_outputs":bowtie_outputs,
+        }
+        
+        trimmomatic_id, trimmomatic_output, unpaired_R1, unpaired_R2 = ejecutar_trimmomatic(history_id, unaligned_R1, unaligned_R2)
         results["trimmomatic"] = {
             "trimmomatic_id": trimmomatic_id,
-            "trimmomatic_output_id": trimmomatic_output_id,
             "trimmomatic_output": trimmomatic_output
         }
 
-        bowtie_id, bowtie_outputs = ejecutar_bowtie(history_id, trimmomatic_output_id)
-        results["bowtie"] = {
-            "bowtie_id": bowtie_id,
-            "bowtie_outputs":bowtie_outputs
-
+        fastqc_id, fastqc_outputs = ejecutar_fastqc(history_id, unpaired_R1, unpaired_R2)
+        results["fastqc"] = {
+            "fastqc_id" : fastqc_id,
+            "fastqc_outputs" : fastqc_outputs
         }
 
         return render(request, "resultado_fastqc.html",{
