@@ -115,24 +115,37 @@ def ejecutar_fastqc(history_id, datasetID_R1, datasetID_R2):
         
     gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
 
-    fastqc_job = gi.tools.run_tool(
+    fastqc_job1 = gi.tools.run_tool(
         history_id=history_id,
         tool_id="toolshed.g2.bx.psu.edu/repos/devteam/fastqc/fastqc/0.72",
         tool_inputs={
-            "analysis_type": "paired",
-            "left_input": {"src": "hda", "id": datasetID_R1},
-            "right_input": {"src": "hda", "id": datasetID_R2},
+                "input_file": {"src": "hda", "id": datasetID_R1}
         }
     )
-    fastqc_job_id = fastqc_job["jobs"][0]["id"]
-    esperar_finalizacion(gi, fastqc_job_id)
 
-    job_info = gi.jobs.show_job(fastqc_job_id)
+    fastqc_job2 = gi.tools.run_tool(
+        history_id=history_id,
+        tool_id="toolshed.g2.bx.psu.edu/repos/devteam/fastqc/fastqc/0.72",
+        tool_inputs={
+                "input_file": {"src": "hda", "id": datasetID_R2}
+        }
+    )
+    fastqc_job_id1 = fastqc_job1["jobs"][0]["id"]
+    fastqc_job_id2 = fastqc_job2["jobs"][0]["id"]
 
-    outputs_dict  = job_info.get("outputs", [])
-    fastqc_outputs = list(outputs_dict.values())
+    esperar_finalizacion(gi, fastqc_job_id1)
+    esperar_finalizacion(gi, fastqc_job_id2)
 
-    return fastqc_job_id, fastqc_outputs
+    job_info1 = gi.jobs.show_job(fastqc_job_id1)
+    job_info2 = gi.jobs.show_job(fastqc_job_id2)
+
+    outputs_dict1  = job_info1.get("outputs", [])
+    fastqc_outputs1 = list(outputs_dict1.values())
+
+    outputs_dict2  = job_info1.get("outputs", [])
+    fastqc_outputs2 = list(outputs_dict2.values())
+
+    return fastqc_job_id1, fastqc_job_id2, fastqc_outputs1, fastqc_outputs2
 
 def ejecutar_trimmomatic(history_id, unaligned_R1, unaligned_R2):    
 
@@ -171,15 +184,13 @@ def ejecutar_bowtie(history_id, datasetID_R1, datasetID_R2, genomaId):
         history_id=history_id,
         tool_id="toolshed.g2.bx.psu.edu/repos/devteam/bowtie2/bowtie2/2.5.3+galaxy1",
         tool_inputs = {
-            "paired_or_single": "paired",
-            "left_input": {"src": "hda", "id": datasetID_R1},
-            "right_input": {"src": "hda", "id": datasetID_R2},
+            "paired_or_single_selector": "paired",
+            "input1": {"src": "hda", "id": datasetID_R1},
+            "input2": {"src": "hda", "id": datasetID_R2},
             "reference_genome_source": "history",
             "reference_genome": {"src": "hda", "id": genomaId},
-            "write_unaligned_reads": True,
-            "unaligned_reads_filename": "unaligned_reads",
-            "write_aligned_reads": True,
-            "aligned_reads_filename": "aligned_reads.sam"  
+            "unaligned_fiel": True,
+            "aligned_fiel": True,
         }
     )
     bowtie_job_id = bowtie_job["jobs"][0]["id"]
@@ -250,10 +261,12 @@ def ejecutar_workflow(request):
         
         results = {}
 
-        fastqc_id, fastqc_outputs = ejecutar_fastqc(history_id, datasetID, datasetID2)
+        fastqc_id1, fastqc_id2, fastqc_outputs1, fastqc_outputs2 = ejecutar_fastqc(history_id, datasetID, datasetID2)
         results["fastqc"] = {
-            "fastqc_id" : fastqc_id,
-            "fastqc_outputs" : fastqc_outputs
+            "fastqc_id1" : fastqc_id1,
+            "fastqc_outputs1" : fastqc_outputs1,
+            "fastqc_id2" : fastqc_id2,
+            "fastqc_outputs2" : fastqc_outputs2
         }
 
         bowtie_id, bowtie_outputs, unaligned_R1, unaligned_R2 = ejecutar_bowtie(history_id, datasetID, datasetID2, genomaId)
@@ -268,10 +281,12 @@ def ejecutar_workflow(request):
             "trimmomatic_output": trimmomatic_output
         }
 
-        fastqc_id, fastqc_outputs = ejecutar_fastqc(history_id, unpaired_R1, unpaired_R2)
+        fastqc_id1, fastqc_id2, fastqc_outputs1, fastqc_outputs2 = ejecutar_fastqc(history_id, unpaired_R1, unpaired_R2)
         results["fastqc"] = {
-            "fastqc_id" : fastqc_id,
-            "fastqc_outputs" : fastqc_outputs
+            "fastqc_id1" : fastqc_id1,
+            "fastqc_outputs1" : fastqc_outputs1,
+            "fastqc_id2" : fastqc_id2,
+            "fastqc_outputs2" : fastqc_outputs2
         }
 
         return render(request, "resultado_fastqc.html",{
