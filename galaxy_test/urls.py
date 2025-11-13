@@ -32,4 +32,5 @@ urlpatterns = [
     path('ejecutar_workflow/', views.ejecutar_workflow, name='ejecutar_workflow'),
     path('show_dataset/<str:id>/', views.show_dataset, name='show_dataset'),
     path('get_jobs/<str:id>', views.get_jobs, name="get_jobs"),
+    path('get_jobs_history/<str:id>', views.get_jobs_history, name="get_jobs_history"),
 ]
