@@ -344,15 +344,28 @@ def ejecutar_workflow(request):
             return render(request, "error.html", {"mensaje": "Historia no encontrada."})
 
         # Obtener datasets dentro de la historia
-        datasets = gi.histories.show_history(history_id, contents=True)
+        # datasets = gi.histories.show_history(history_id, contents=True)
         idDataset = request.POST.get('id_dataset')
         idDataset2 = request.POST.get('id_dataset2')
         idGenoma = request.POST.get('id_genoma')
+        
+        datasets_raw = gi.histories.show_history(history_id, contents=True)
+        datasets = [
+            d for d in datasets_raw
+            if (not d.get("deleted", False)) and d.get("visible", True)
+        ]
+        
+        datasets_fastq = [
+            d for d in datasets 
+            if d["name"].lower().endswith((".fastq", ".fq", ".fastq.gz"))
+        ]
+
 
         if not (idDataset and idDataset2 and idGenoma):
             # Mostrar datasets disponibles si no se seleccionó ninguno
             return render(request, "datasetsHistoria.html", {
                 "datasets": datasets,
+                "datasets_fastq": datasets_fastq,
                 "history_id": history_id,
                 "nombre_historia": nameHistory
             })
@@ -530,3 +543,14 @@ def get_jobs_history(request, id):
 
     
 #     return render(request, "ejecutar_herramienta/ejecutar_workflow.html", {"histories": histories})
+
+def get_inputs_job(request, id):
+    gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
+    inputs = gi.jobs.get_inputs(job_id=id)
+    return JsonResponse(inputs, safe=False)
+
+
+def get_outputs_job(request, id):
+    gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
+    inputs = gi.jobs.get_outputs(job_id=id)
+    return JsonResponse(inputs, safe=False)

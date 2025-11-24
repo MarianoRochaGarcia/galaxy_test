@@ -1,48 +1,76 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Datasets de Historia</title>
-</head>
-<body>
-    <h1>Datasets de la historia "{{ nombre_historia }}"</h1>
+{% extends "layout/indexview.html" %}
 
-    {% if error %}
-        <p style="color:red">{{ error }}</p>
-    {% endif %}
 
-    {% if mensaje %}
-        <p style="color:green">{{ mensaje }}</p>
-    {% endif %}
+{% block 'content' %}
 
-    {% if datasets %}
-        <h2>Lista de datasets:</h2>
-        <ul>
-            {% for dataset in datasets %}
-                <li>
-                    <strong>Nombre:</strong> {{ dataset.name }} |
-                    <strong>Estado:</strong> {{ dataset.state }} |
-                    <strong>ID:</strong> {{ dataset.id }}
-                </li>
-            {% endfor %}
-        </ul>
+    <div class="max-w-4xl mx-auto px-4 space-y-5">
 
-        <h3>Ejecutar FastQC en un dataset específico</h3>
-        <form method="post">
+        
+        <h3 class="text-3xl font-bold">Ejecutar Workflow</h3>
+
+        <form id="workflowForm" method="post" class="space-y-4 mt-20">
             {% csrf_token %}
-            <!-- Mantener la historia seleccionada -->
             <input type="hidden" name="nombre_historia" value="{{ nombre_historia }}">
-            <label>Id del dataset1:</label>
-            <input type="text" name="id_dataset" required>
 
-            <label>Id del dataset2:</label>
-            <input type="text" name="id_dataset2" required>
+            <label class="block font-semibold text-gray-700">Dataset 1 (FASTQ):</label>
+            <select name="id_dataset" required
+                    class="mt-1 w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm">
+                <option value="">Selecciona un dataset...</option>
+                {% for dataset in datasets_fastq %}
+                    <option value="{{ dataset.id }}">{{ dataset.name }} — {{ dataset.state }}</option>
+                {% endfor %}
+            </select>
 
-            <label>Id del genoma:</label>
-            <input type="text" name="id_genoma" required>
-            <button type="submit">Ejecutar Proceso</button>
+            <label class="block font-semibold text-gray-700">Dataset 2 (FASTQ):</label>
+            <select name="id_dataset2" required
+                    class="mt-1 w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm">
+                <option value="">Selecciona un dataset...</option>
+                {% for dataset in datasets_fastq %}
+                    <option value="{{ dataset.id }}">{{ dataset.name }} — {{ dataset.state }}</option>
+                {% endfor %}
+            </select>
+
+            <label class="block font-semibold text-gray-700">Genoma (FASTA):</label>
+            <select name="id_genoma" required
+                    class="mt-1 w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm">
+                <option value="">Selecciona un genoma...</option>
+                {% for dataset in genomes %}
+                    <option value="{{ dataset.id }}">{{ dataset.name }} — {{ dataset.state }}</option>
+                {% endfor %}
+            </select>
+           <div class="my-3">
+                <button type="submit"
+                        class="px-4 py-2 bg-blue-400 hover:bg-blue-500 text-white rounded-md">
+                    Ejecutar Proceso
+                </button>
+            </div>
+
         </form>
-    {% else %}
-        <p>No se encontraron datasets en esta historia.</p>
-    {% endif %}
-</body>
-</html>
+    
+        <h1 class="text-xl font-bold text-gray-800 capitalize">Datasets de la historia "{{ nombre_historia }}"</h1>
+
+        {% if error %}
+            <p style="color:red">{{ error }}</p>
+        {% endif %}
+
+        {% if mensaje %}
+            <p style="color:green">{{ mensaje }}</p>
+        {% endif %}
+
+        {% if datasets %}
+            <h2 class="text-gray-600 text-xl">Lista de datasets:</h2>
+            <ul class="space-y-5">
+                {% for dataset in datasets %}
+                    <li class="p-5 rounded-2xl shadow-md hover:shadow-lg transition-shadow duration-200 border-l-4 bg-blue-50 text-blue-800">
+                        <p><strong>Nombre: </strong>{{ dataset.name }}</p>
+                        <p><strong>Estado: </strong>{{ dataset.state }}</p>
+                        <p><strong>ID: </strong>{{ dataset.id }}</p>
+                    </li>
+                {% endfor %}
+            </ul>
+
+        {% else %}
+            <p>No se encontraron datasets en esta historia.</p>
+        {% endif %}
+    </div>
+{% endblock 'content' %}

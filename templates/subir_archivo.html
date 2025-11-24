@@ -9,17 +9,21 @@ Subir archivo
     <section class="bg-gray-50 flex justify-center">
 
         <div class="bg-white shadow-lg rounded-lg p-8 w-full max-h-80 max-w-md space-y-6">
-            <form method="POST" enctype="multipart/form-data">
+            <form method="POST" enctype="multipart/form-data" class="space-y-4">
                 {% csrf_token %}
                 <div>
                     <label for="archivo" class="block text-sm font-medium text-gray-700">Selecciona un archivo</label>
                     <input type="file" name="archivo" id="archivo" required
-                    class="mt-1 w-full px-4 py-2 border border-gray-300 rounedd-md shadow-sm">
+                    class="mt-1 w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm">
                 </div>
                 <div>
                     <label for="history_id" class="block text-sm font-medium text-gray-700">ID de la historia:</label>
-                    <input type="text" name="history_id" id="history_id" required
-                    class="mt-1 w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm">
+                    <select name="history_id" required class="mt-1 w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm">
+                        <option value="">Selecciona una historia...</option>
+                        {% for historia in historias %}
+                            <option value="{{ historia.id }}">{{ historia.name }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
                 <div>
                     <button type="submit" 
