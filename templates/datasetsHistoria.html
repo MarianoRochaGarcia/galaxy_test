@@ -34,11 +34,11 @@
             <select name="id_genoma" required
                     class="mt-1 w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm">
                 <option value="">Selecciona un genoma...</option>
-                {% for dataset in genomes %}
+                {% for dataset in genomas %}
                     <option value="{{ dataset.id }}">{{ dataset.name }} — {{ dataset.state }}</option>
                 {% endfor %}
             </select>
-           <div class="my-3">
+        <div class="my-3">
                 <button type="submit"
                         class="px-4 py-2 bg-blue-400 hover:bg-blue-500 text-white rounded-md">
                     Ejecutar Proceso
