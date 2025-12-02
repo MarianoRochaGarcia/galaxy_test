@@ -354,6 +354,155 @@ def probar_trimmomatic(request):
         "histories": histories
     })
 """
+def ejecutar_trimmomatic_single(request,history_id):
+    gi = GalaxyInstance(url=GALAXY_URL, key=GALAXY_API_KEY)
+    
+    history_info = gi.histories.show_history(history_id, keys=["name"])
+    nameHistory = history_info["name"]
+    idDataset = request.POST.get('id_dataset')
+    idDataset2 = request.POST.get('id_dataset2')
+    
+    datasets_raw = gi.histories.show_history(history_id, contents=True)
+    datasets = [
+        d for d in datasets_raw
+        if (not d.get("deleted", False)) and d.get("visible", True)
+    ]
+    
+    datasets_fastq = [
+        d for d in datasets 
+        if d["name"].lower().endswith((".fastq", ".fq", ".fastq.gz"))
+    ]
+
+
+    if not (idDataset and idDataset2):
+        # Mostrar datasets disponibles si no se seleccionó ninguno
+        return render(request, "ejecutar_herramienta/ejecutar_trimmomatic_single.html", {
+            "datasets": datasets,
+            "datasets_fastq": datasets_fastq,
+            "history_id": history_id,
+            "nombre_historia": nameHistory
+        })
+
+    # Buscar dataset seleccionado
+    datasetID = None
+    datasetID2 =None
+
+    for dataset in datasets:
+        if dataset['id'] == idDataset:
+            datasetID = idDataset
+        elif dataset['id'] == idDataset2:
+            datasetID2 = idDataset2
+
+    if not (datasetID and datasetID2):
+        return render(request, "error.html", {"mensaje": "Dataset no encontrado."})
+    
+    tool_inputs = {
+    "readtype|single_or_paired": "pair_of_files",
+    "readtype|fastq_r1_in": {"src": "hda", "id": idDataset},
+    "readtype|fastq_r2_in": {"src": "hda", "id": idDataset2},
+    "illuminaclip|do_illuminaclip": "no",
+    # "operations_0|operation|name": "SLIDINGWINDOW",
+    # "operations_0|operation|window_size": "4",
+    # "operations_0|operation|required_quality": "20",
+    }
+    job = gi.tools.run_tool(
+        history_id=history_id,
+        tool_id="toolshed.g2.bx.psu.edu/repos/pjbriggs/trimmomatic/trimmomatic/0.39+galaxy2",
+        tool_inputs=tool_inputs,
+    )
+    job_id = job["jobs"][0]["id"]
+    esperar_finalizacion(gi, job_id)
+    info = gi.jobs.show_job(job_id)
+    print("params:", info.get("params"))
+    print("outputs:", info.get("outputs"))
+
+    response = {
+        "info": info
+    }
+    return JsonResponse(response, safe=False)
+
+
+def ejecutar_bowtie2_single(request, history_id):
+    
+    gi = GalaxyInstance(url= GALAXY_URL, key=GALAXY_API_KEY)  
+
+    history_info = gi.histories.show_history(history_id, keys=["name"])
+    nameHistory = history_info["name"]
+    idDataset = request.POST.get("id_dataset")
+    idDataset2 = request.POST.get("id_dataset2")
+    
+    datasets_raw = gi.histories.show_history(history_id, contents=True)
+    datasets = [
+        d for d in datasets_raw
+        if (not d.get("deleted", False)) and d.get("visible", True)
+    ]
+    
+    datasets_fastq = [
+        d for d in datasets 
+        if d["name"].lower().endswith((".fastq", ".fq", ".fastq.gz"))
+    ]
+
+
+    if not (idDataset and idDataset2):
+        # Mostrar datasets disponibles si no se seleccionó ninguno
+        return render(request, "ejecutar_herramienta/ejecutar_trimmomatic_single.html", {
+            "datasets": datasets,
+            "datasets_fastq": datasets_fastq,
+            "history_id": history_id,
+            "nombre_historia": nameHistory
+        })
+
+    # Buscar dataset seleccionado
+    datasetID = None
+    datasetID2 =None
+
+    for dataset in datasets:
+        if dataset['id'] == idDataset:
+            datasetID = idDataset
+        elif dataset['id'] == idDataset2:
+            datasetID2 = idDataset2
+
+    if not (datasetID and datasetID2):
+        return render(request, "error.html", {"mensaje": "Dataset no encontrado."})
+    
+    tool_inputs= {
+        
+    }
+
+    bowtie_job = gi.tools.run_tool(
+        history_id=history_id,
+        tool_id="toolshed.g2.bx.psu.edu/repos/devteam/bowtie2/bowtie2/2.5.3+galaxy0",
+        tool_inputs={
+            "library": {
+                "type": "paired",
+                "input_1": {"src": "hda", "id": datasetID_R1},
+                "input_2": {"src": "hda", "id": datasetID_R2},
+                "unaligned_file": True,
+                "aligned_file": True,
+                "paired_options": {
+                "paired_options_selector": "no"}
+            },
+            "reference_genome": {
+                "source": "history",
+                "own_file": {"src": "hda", "id": genomaId}
+            }
+        }
+    )
+
+    bowtie_job_id = bowtie_job["jobs"][0]["id"]
+    esperar_finalizacion(gi, bowtie_job_id)
+
+    job_info = gi.jobs.show_job(bowtie_job_id)
+    outputs = job_info.get("outputs", {})
+
+    outputs_dict = {k: v for k, v in outputs.items()}
+
+    #Se filtra los dos unaligned
+    unaligned_R1 = outputs_dict.get("unaligned_reads_1")
+    unaligned_R2 = outputs_dict.get("unaligned_reads_2")
+
+    return bowtie_job_id, outputs_dict, unaligned_R1, unaligned_R2
+
 
 def show_dataset(request, id):
     
@@ -385,3 +534,8 @@ def get_outputs_job(request, id):
     gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
     inputs = gi.jobs.get_outputs(job_id=id)
     return JsonResponse(inputs, safe=False)
+
+def ver_parametros_permitidos_tool(request, id_tool):
+    gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
+    info_tool = gi.tools.show_tool(tool_id=id_tool, io_details=True)
+    return JsonResponse(info_tool)

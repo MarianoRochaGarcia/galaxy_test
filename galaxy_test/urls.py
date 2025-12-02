@@ -34,9 +34,11 @@ urlpatterns = [
     path('show_dataset/<str:id>/', views.show_dataset, name='show_dataset'),
     path('get_jobs/<str:id>', views.get_jobs, name="get_jobs"),
     path('get_jobs_history/<str:id>', views.get_jobs_history, name="get_jobs_history"),
-    path('probar_trimmomatic/', views.probar_trimmomatic, name='probar_trimmomatic'),
+    # path('probar_trimmomatic/', views.probar_trimmomatic, name='probar_trimmomatic'),
     
     # URLS Para desarollo
     path("get_inputs_job/<path:id>/", views.get_inputs_job, name="get_inputs_job"),
     path("get_outputs_job/<path:id>/", views.get_outputs_job, name="get_outputs_job"),
+    path("ejecutar_trimmomatic_single/<str:history_id>", views.ejecutar_trimmomatic_single, name="ejecutar_trimmomatic_single"),
+    path("ver_parametros_permitidos_tool/<path:id_tool>", views.ver_parametros_permitidos_tool, name="ver_parametros_permitidos_tool")
 ]
