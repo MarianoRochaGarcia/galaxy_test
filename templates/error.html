@@ -1,0 +1,48 @@
+{% extends "layout/base.html" %}
+
+{% block 'title' %}Error{% endblock 'title' %}
+
+{% block 'content' %}
+<div class="bg-white shadow border border-gray-200 p-6 rounded-lg space-y-4">
+
+    <h1 class="text-2xl font-bold text-red-600">Ocurrió un error</h1>
+    <p class="text-gray-700">Hubo un problema al procesar tu solicitud.</p>
+
+    {% if mensaje %}
+    <div class="bg-red-50 border border-red-300 text-red-700 px-4 py-3 rounded">
+        {{ mensaje|linebreaksbr }}
+    </div>
+    {% else %}
+    <div class="bg-gray-100 border border-gray-300 text-gray-700 px-4 py-3 rounded">
+        No se proporcionó un mensaje de error.
+    </div>
+    {% endif %}
+
+    {% if detalle %}
+    <div>
+        <h2 class="font-semibold text-gray-800">Detalles:</h2>
+        <pre class="bg-gray-100 p-3 rounded text-sm overflow-x-auto">{{ detalle }}</pre>
+    </div>
+    {% endif %}
+
+    {% if exception %}
+    <div>
+        <h2 class="font-semibold text-gray-800">Exception:</h2>
+        <pre class="bg-gray-100 p-3 rounded text-sm overflow-x-auto">{{ exception }}</pre>
+    </div>
+    {% endif %}
+
+    <div class="flex gap-3 pt-4">
+        <a href="javascript:history.back()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded">
+            Regresar
+        </a>
+        <a href="/" class="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded">
+            Inicio
+        </a>
+        <a href="/ejecutar_workflow/" class="px-4 py-2 bg-purple-600 text-white hover:bg-purple-700 rounded">
+            Ejecutar Workflow
+        </a>
+    </div>
+
+</div>
+{% endblock 'content' %}

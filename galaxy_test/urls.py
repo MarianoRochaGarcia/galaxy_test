@@ -34,7 +34,7 @@ urlpatterns = [
     path('show_dataset/<str:id>/', views.show_dataset, name='show_dataset'),
     path('get_jobs/<str:id>', views.get_jobs, name="get_jobs"),
     path('get_jobs_history/<str:id>', views.get_jobs_history, name="get_jobs_history"),
-    path('probar_trimmomatic/', views.probar_trimmomatic, name='probar_trimmomatic'),
+    
     
     # URLS Para desarollo
     path("get_inputs_job/<path:id>/", views.get_inputs_job, name="get_inputs_job"),
