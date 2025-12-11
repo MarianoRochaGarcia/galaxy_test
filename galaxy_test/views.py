@@ -21,7 +21,7 @@ headers = {
 
 def index(request):
     
-    return render(request, 'index.html', {})
+    return render(request, 'layout/index.html', {})
 
 def obtener_historias():
     
@@ -109,8 +109,7 @@ def esperar_finalizacion(gi, job_id, intervalo=10):
         time.sleep(intervalo)
 
 def ejecutar_fastqc(history_id, datasetID_R1, datasetID_R2):
-
-        
+   
     gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
 
     fastqc_job1 = gi.tools.run_tool(
@@ -149,84 +148,136 @@ def ejecutar_trimmomatic(history_id, unaligned_R1, unaligned_R2):
 
     gi = GalaxyInstance(url= GALAXY_URL, key=GALAXY_API_KEY)  
 
-    trimmomatic_job = gi.tools.run_tool(
+    tool_inputs = {
+        "readtype|single_or_paired": "pair_of_files",
+        "readtype|fastq_r1_in": {"src": "hda", "id": unaligned_R1},
+        "readtype|fastq_r2_in": {"src": "hda", "id": unaligned_R2},
+        "illuminaclip|do_illuminaclip": "no",
+        }
+    
+    job = gi.tools.run_tool(
         history_id=history_id,
         tool_id="toolshed.g2.bx.psu.edu/repos/pjbriggs/trimmomatic/trimmomatic/0.39+galaxy2",
-        tool_inputs={
-            "readtype": {
-                "single_or_paired": "pair_of_files",
-                "pair_of_files": {  
-                    "fastq_r1_in": {"src": "hda", "id": unaligned_R1},
-                    "fastq_r2_in": {"src": "hda", "id": unaligned_R2}
-                }
-            },
-            "illuminaclip": {
-                "do_illuminaclip": "no",
-                "no": {}
-            }
-        }
+        tool_inputs=tool_inputs,
     )
 
-    trimmomatic_job_id = trimmomatic_job["jobs"][0]["id"]
-    esperar_finalizacion(gi, trimmomatic_job_id)
+    job_id = job["jobs"][0]["id"]
+    esperar_finalizacion(gi, job_id)
+    info = gi.jobs.show_job(job_id)
 
-    job_info = gi.jobs.show_job(trimmomatic_job_id)
-
-    # Extraer los datasets de salida directamente del job
-    outputs  = job_info.get("outputs", {})
+    outputs = info.get("outputs", {})
     output_datasets = list(outputs.values())
-    outputs_dict = {k: v for k, v in outputs.items()}
 
-    unpaired_R1 = outputs.get("output_unpaired_forward", {}).get("id")
-    unpaired_R2 = outputs.get("output_unpaired_reverse", {}).get("id")
+    paired_R1 = outputs.get("fastq_out_r1_paired", {}).get("id")
+    paired_R2 = outputs.get("fastq_out_r2_paired", {}).get("id")
 
-    return trimmomatic_job_id, output_datasets, unpaired_R1, unpaired_R2
+    return job_id, output_datasets, paired_R1, paired_R2
 
 def ejecutar_bowtie(history_id, datasetID_R1, datasetID_R2, genomaId):
 
     gi = GalaxyInstance(url= GALAXY_URL, key=GALAXY_API_KEY)  
 
-    bowtie_job = gi.tools.run_tool(
+    tool_inputs = {
+        "library|type": "paired",
+        "library|input_1": {"src": "hda", "id": datasetID_R1},
+        "library|input_2": {"src": "hda", "id": datasetID_R2},
+        "library|unaligned_file": "true",     
+        "library|aligned_file": "true",       
+
+        "library|paired_options|paired_options_selector": "no",
+
+        "reference_genome|source": "history",
+        "reference_genome|own_file": {"src": "hda", "id": genomaId},
+    }
+
+    job = gi.tools.run_tool(
         history_id=history_id,
         tool_id="toolshed.g2.bx.psu.edu/repos/devteam/bowtie2/bowtie2/2.5.3+galaxy0",
-        tool_inputs={
-            "library": {
-                "type": "paired",
-                "input_1": {"src": "hda", "id": datasetID_R1},
-                "input_2": {"src": "hda", "id": datasetID_R2},
-                "unaligned_file": True,
-                "aligned_file": True,
-                "paired_options": {
-                "paired_options_selector": "no"}
-            },
-            "reference_genome": {
-                "source": "history",
-                "own_file": {"src": "hda", "id": genomaId}
-            }
-        }
-    )
+        tool_inputs=tool_inputs,
+        )
 
-    bowtie_job_id = bowtie_job["jobs"][0]["id"]
-    esperar_finalizacion(gi, bowtie_job_id)
 
-    job_info = gi.jobs.show_job(bowtie_job_id)
-    outputs = job_info.get("outputs", {})
+    job_id = job["jobs"][0]["id"]
+    esperar_finalizacion(gi, job_id)
+    info = gi.jobs.show_job(job_id)
 
-    outputs_dict = {k: v for k, v in outputs.items()}
+    outputs = info.get("outputs", {})
+    output_datasets = list(outputs.values())
 
-    #Se filtra los dos unaligned
-    unaligned_R1 = outputs_dict.get("unaligned_reads_1")
-    unaligned_R2 = outputs_dict.get("unaligned_reads_2")
 
-    return bowtie_job_id, outputs_dict, unaligned_R1, unaligned_R2
+    unaligned_R1 = outputs.get("output_unaligned_reads_r", {}).get("id")
+    unaligned_R2 = outputs.get("output_unaligned_reads_l", {}).get("id")
 
-# Metodo para ejecutar Fastqc, Trimmomatic y Bowtie
+    return job_id, output_datasets, unaligned_R1, unaligned_R2
+
+def ejecutar_spades(history_id, paired_R1, paired_R2):
+
+    gi = GalaxyInstance(url= GALAXY_URL, key=GALAXY_API_KEY)  
+
+    tool_inputs = {
+        "library|lib_type": "paired",
+        "library|R1": {"src": "hda", "id": paired_R1,},
+        "library|R2": {"src": "hda", "id": paired_R2,}
+    }
+
+    job = gi.tools.run_tool(
+        history_id=history_id,
+        tool_id="toolshed.g2.bx.psu.edu/repos/iuc/shovill/shovill/1.1.0+galaxy2",
+        tool_inputs=tool_inputs,
+        )
+
+    job_id = job["jobs"][0]["id"]
+    esperar_finalizacion(gi, job_id)
+    info = gi.jobs.show_job(job_id)
+
+    outputs = info.get("outputs", {})
+    output_datasets = list(outputs.values())
+
+    shovill = outputs.get("contigs", {}).get("id")
+
+    return job_id, output_datasets, shovill
+
+def ejecutar_velvet(history_id, paired_R1, paired_R2):
+    
+    gi = GalaxyInstance(url= GALAXY_URL, key=GALAXY_API_KEY)
+
+    tool_inputs = {
+        "files_0|filetype": "fastq",
+        "files_0|paired_type|paired_type_selector": "paired",
+
+        "files_0|paired_type|input1": {"src": "hda", "id": paired_R1},
+        "files_0|paired_type|input2": {"src": "hda", "id": paired_R2},
+
+        "start_kmer": 31,
+        "end_kmer": 191,
+        "kmer_step": 2,
+    }
+
+    job = gi.tools.run_tool(
+        history_id=history_id,
+        tool_id="toolshed.g2.bx.psu.edu/repos/simon-gladman/velvetoptimiser/velvetoptimiser/2.2.6",
+        tool_inputs=tool_inputs,
+        )
+    
+    job_id = job["jobs"][0]["id"]
+    esperar_finalizacion(gi, job_id)
+    info = gi.jobs.show_job(job_id)
+
+    outputs = info.get("outputs", {})
+    output_datasets = list(outputs.values())
+
+    shovill = outputs.get("contigs", {}).get("id")
+
+    return job_id, output_datasets, shovill
+
+# Metodo el proceso completo
 def ejecutar_workflow(request):
 
     gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
 
     histories = gi.histories.get_histories()
 
+    #Entrada del nombre de la historia
     if request.method == 'POST':
         nameHistory = request.POST.get('nombre_historia')
         if not nameHistory:
@@ -243,7 +294,6 @@ def ejecutar_workflow(request):
             return render(request, "error.html", {"mensaje": "Historia no encontrada."})
 
         # Obtener datasets dentro de la historia
-        # datasets = gi.histories.show_history(history_id, contents=True)
         idDataset = request.POST.get('id_dataset')
         idDataset2 = request.POST.get('id_dataset2')
         idGenoma = request.POST.get('id_genoma')
@@ -253,7 +303,6 @@ def ejecutar_workflow(request):
             d for d in datasets_raw
             if (not d.get("deleted", False)) and d.get("visible", True)
         ]
-        
         datasets_fastq = [
             d for d in datasets 
             if d["name"].lower().endswith((".fastq", ".fq", ".fastq.gz"))
@@ -262,7 +311,6 @@ def ejecutar_workflow(request):
             d for d in datasets 
             if d["name"].lower().endswith(".fasta")
         ]
-
 
         if not (idDataset and idDataset2 and idGenoma):
             # Mostrar datasets disponibles si no se seleccionó ninguno
@@ -292,41 +340,70 @@ def ejecutar_workflow(request):
         
         results = {}
 
+        #Ejecución de los procesos 
+        try:
+            fastqc_inicial_id1, fastqc_inicial_id2, fastqc_inicial_outputs1, fastqc_inicial_outputs2 = ejecutar_fastqc(history_id, datasetID, datasetID2)
+            results["fastqc"] = {
+                "fastqc_id1" : fastqc_inicial_id1,
+                "fastqc_outputs1" : fastqc_inicial_outputs1,
+                "fastqc_id2" : fastqc_inicial_id2,
+                "fastqc_outputs2" : fastqc_inicial_outputs2
+            }
+        except Exception as e:
+            return render(request, "error.html", {"mensaje": f"Error al ejecutar FastQC inicial: {str(e)}"})
 
-        fastqc_id1, fastqc_id2, fastqc_outputs1, fastqc_outputs2 = ejecutar_fastqc(history_id, datasetID, datasetID2)
-        results["fastqc"] = {
-            "fastqc_id1" : fastqc_id1,
-            "fastqc_outputs1" : fastqc_outputs1,
-            "fastqc_id2" : fastqc_id2,
-            "fastqc_outputs2" : fastqc_outputs2
-        }
-
-        bowtie_id, bowtie_outputs, unaligned_R1, unaligned_R2 = ejecutar_bowtie(history_id, datasetID, datasetID2, genomaId)
-        results["bowtie"] = {
-            "bowtie_id": bowtie_id,
-            "bowtie_outputs":bowtie_outputs,
-        }
+        try:
+            bowtie_id, bowtie_outputs, unaligned_R1, unaligned_R2 = ejecutar_bowtie(history_id, datasetID, datasetID2, genomaId)
+            results["bowtie"] = {
+                "bowtie_id": bowtie_id,
+                "bowtie_outputs":bowtie_outputs,
+            }
+        except Exception as e:
+            return render(request, "error.html", {"mensaje": f"Error al ejecutar Bowtie2: {str(e)}"})
         
-        trimmomatic_id, trimmomatic_output, unpaired_R1, unpaired_R2 = ejecutar_trimmomatic(history_id, unaligned_R1, unaligned_R2)
-        results["trimmomatic"] = {
-            "trimmomatic_id": trimmomatic_id,
-            "trimmomatic_output": trimmomatic_output
-        }
+        try:
+            trimmomatic_id, trimmomatic_outputs, paired_R1, paired_R2 = ejecutar_trimmomatic(history_id, unaligned_R1, unaligned_R2)
+            results["trimmomatic"] = {
+                "trimmomatic_id": trimmomatic_id,
+                "trimmomatic_output": trimmomatic_outputs
+            }
+        except Exception as e: 
+            return render(request, "error.html", {"mensaje": f"Error al ejecutar Trimmomatic: {str(e)}"})
 
-        fastqc_id1, fastqc_id2, fastqc_outputs1, fastqc_outputs2 = ejecutar_fastqc(history_id, unpaired_R1, unpaired_R2)
-        results["fastqc"] = {
-            "fastqc_id1" : fastqc_id1,
-            "fastqc_outputs1" : fastqc_outputs1,
-            "fastqc_id2" : fastqc_id2,
-            "fastqc_outputs2" : fastqc_outputs2
-        }
+        try:
+            fastqc_final_id1, fastqc_final_id2, fastqc_final_outputs1, fastqc_final_outputs2 = ejecutar_fastqc(history_id, paired_R1, paired_R2)
+            results["fastqc"] = {
+                "fastqc_id1" : fastqc_final_id1,
+                "fastqc_outputs1" : fastqc_final_outputs1,
+                "fastqc_id2" : fastqc_final_id2,
+                "fastqc_outputs2" : fastqc_final_outputs2
+            }
+        except Exception as e:
+            return render(request, "error.html", {"mensaje": f"Error al ejecutar FastQC final: {str(e)}"})
+
+        try:
+            spades_id, sapades_outputs, shovill_contigs = ejecutar_spades(history_id, paired_R1, paired_R2)
+            results["spades"] = {
+                "spades_id": spades_id,
+                "spades_outputs": sapades_outputs
+            }
+        except Exception as e:
+            return render(request, "error.html", {"mensaje": f"Error al ejecutar SPAdes: {str(e)}"})
+
+        try:
+            velvet_id, velvet_outputs, velvet_contigs = ejecutar_velvet(history_id, paired_R1, paired_R2)
+            results["velvet"] = {
+                "velvet_id": velvet_id,
+                "velvet_outputs": velvet_outputs
+            }
+        except Exception as e:
+            return render(request, "error.html", {"mensaje": f"Error al ejecutar Velvet: {str(e)}"})
 
         return render(request, "resultado_fastqc.html",{
             "history_id": history_id, 
             "job_results" : results
         })
 
-    
     return render(request, "ejecutar_herramienta/ejecutar_workflow.html", {"histories": histories})
 
 """
