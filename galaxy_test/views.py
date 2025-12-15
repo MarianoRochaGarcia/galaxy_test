@@ -21,7 +21,7 @@ headers = {
 
 def index(request):
     
-    return render(request, 'layout/index.html', {})
+    return render(request, 'index.html', {})
 
 def obtener_historias():
     
