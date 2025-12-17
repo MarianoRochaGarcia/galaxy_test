@@ -108,41 +108,33 @@ def esperar_finalizacion(gi, job_id, intervalo=10):
             break
         time.sleep(intervalo)
 
-def ejecutar_fastqc(history_id, datasetID_R1, datasetID_R2):
-   
+def ejecutar_fastqc(history_id, datsets):
+
     gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
+    
+    results = {}
 
-    fastqc_job1 = gi.tools.run_tool(
-        history_id=history_id,
-        tool_id="toolshed.g2.bx.psu.edu/repos/devteam/fastqc/fastqc/0.72",
-        tool_inputs={
-                "input_file": {"src": "hda", "id": datasetID_R1}
+    for dataset in datsets:
+        tool_inputs = {
+            "input_file": {"src": "hda", "id": dataset}
         }
-    )
 
-    fastqc_job2 = gi.tools.run_tool(
-        history_id=history_id,
-        tool_id="toolshed.g2.bx.psu.edu/repos/devteam/fastqc/fastqc/0.72",
-        tool_inputs={
-                "input_file": {"src": "hda", "id": datasetID_R2}
-        }
-    )
-    fastqc_job_id1 = fastqc_job1["jobs"][0]["id"]
-    fastqc_job_id2 = fastqc_job2["jobs"][0]["id"]
+        job = gi.tools.run_tool(
+            history_id=history_id,
+            tool_id="toolshed.g2.bx.psu.edu/repos/devteam/fastqc/fastqc/0.72",
+            tool_inputs=tool_inputs,
+        )
 
-    esperar_finalizacion(gi, fastqc_job_id1)
-    esperar_finalizacion(gi, fastqc_job_id2)
+        job_id = job["jobs"][0]["id"]
+        esperar_finalizacion(gi, job_id)
+        info = gi.jobs.show_job(job_id)
 
-    job_info1 = gi.jobs.show_job(fastqc_job_id1)
-    job_info2 = gi.jobs.show_job(fastqc_job_id2)
+        outputs = info.get("outputs", {})
+        output_datasets = list(outputs.values())
 
-    outputs_dict1  = job_info1.get("outputs", [])
-    fastqc_outputs1 = list(outputs_dict1.values())
+        results[dataset] = {"job_id": job_id, "output_datasets": output_datasets}
 
-    outputs_dict2  = job_info2.get("outputs", [])
-    fastqc_outputs2 = list(outputs_dict2.values())
-
-    return fastqc_job_id1, fastqc_job_id2, fastqc_outputs1, fastqc_outputs2
+    return results
 
 def ejecutar_trimmomatic(history_id, unaligned_R1, unaligned_R2):    
 
@@ -210,14 +202,15 @@ def ejecutar_bowtie(history_id, datasetID_R1, datasetID_R2, genomaId):
 
     return job_id, output_datasets, unaligned_R1, unaligned_R2
 
-def ejecutar_spades(history_id, paired_R1, paired_R2):
+def ejecutar_shovill(history_id, paired_R1, paired_R2, type_assembler):
 
     gi = GalaxyInstance(url= GALAXY_URL, key=GALAXY_API_KEY)  
 
     tool_inputs = {
         "library|lib_type": "paired",
         "library|R1": {"src": "hda", "id": paired_R1,},
-        "library|R2": {"src": "hda", "id": paired_R2,}
+        "library|R2": {"src": "hda", "id": paired_R2,},
+        "--assembler": type_assembler
     }
 
     job = gi.tools.run_tool(
@@ -237,38 +230,161 @@ def ejecutar_spades(history_id, paired_R1, paired_R2):
 
     return job_id, output_datasets, shovill
 
-def ejecutar_velvet(history_id, paired_R1, paired_R2):
+def ejecutar_quast(history_id, contigs):
     
     gi = GalaxyInstance(url= GALAXY_URL, key=GALAXY_API_KEY)
 
-    tool_inputs = {
-        "files_0|filetype": "fastq",
-        "files_0|paired_type|paired_type_selector": "paired",
+    results = {}
+    datasets_calidad = {}
+    winner = None
 
-        "files_0|paired_type|input1": {"src": "hda", "id": paired_R1},
-        "files_0|paired_type|input2": {"src": "hda", "id": paired_R2},
+    for contigId in contigs:
+        tool_inputs = {
+            "mode|mode": "individual",
+            "mode|in|custom": "false",
+            "mode|in|inputs": {"src": "hda","id": contigId}
+        }
 
-        "start_kmer": 31,
-        "end_kmer": 191,
-        "kmer_step": 2,
-    }
+        job = gi.tools.run_tool(
+            history_id=history_id,
+            tool_id="toolshed.g2.bx.psu.edu/repos/iuc/quast/quast/5.3.0+galaxy1",
+            tool_inputs=tool_inputs,
+            )
 
-    job = gi.tools.run_tool(
-        history_id=history_id,
-        tool_id="toolshed.g2.bx.psu.edu/repos/simon-gladman/velvetoptimiser/velvetoptimiser/2.2.6",
-        tool_inputs=tool_inputs,
-        )
+        job_id = job["jobs"][0]["id"]
+        esperar_finalizacion(gi, job_id)
+        info = gi.jobs.show_job(job_id)
+
+        outputs = info.get("outputs", {})
+        output_datasets = list(outputs.values())
+
+        reporteId = outputs.get("report_html", {}).get("id")
+
+        results[contigId] = {"job_id": job_id, "output_datasets": output_datasets}
+
+        html_content = gi.datasets.show_dataset(reporteId)
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        n50 = None
+        l50 = None
+
+        for tr in soup.find_all("tr", class_="content-row"):
+            tds = tr.find_all("td")
+            if len(tds) < 2:
+                continue
+
+            nombre = tds[0].get_text(strip=True)
+
+            if nombre == "N50":
+                n50 = tds[1].get("number")
+
+            elif nombre == "L50":
+                l50 = tds[1].get("number")
+        
+            if n50 is not None and l50 is not None:
+                break
+        
+        datasets_calidad[contigId] = {"n50": int(n50), "l50": int(l50)}
+
+    if datasets_calidad[contigs[0]]["n50"] > datasets_calidad[contigs[1]]["n50"] and datasets_calidad[contigs[0]]["l50"] < datasets_calidad[contigs[1]]["l50"]:
+        winner = contigs[0]
     
-    job_id = job["jobs"][0]["id"]
-    esperar_finalizacion(gi, job_id)
-    info = gi.jobs.show_job(job_id)
+    elif datasets_calidad[contigs[0]]["n50"] > datasets_calidad[contigs[1]]["n50"]:
+        winner = contigs[0]
 
-    outputs = info.get("outputs", {})
-    output_datasets = list(outputs.values())
+    else:
+        winner = contigs[1] 
 
-    shovill = outputs.get("contigs", {}).get("id")
+    return results, winner
 
-    return job_id, output_datasets, shovill
+"""
+def ejecutar_quast(history_id, contigs):
+
+    gi = GalaxyInstance(url=GALAXY_URL, key=GALAXY_API_KEY)
+
+    results = {}
+    datasets_calidad = {}
+
+    for contigId in contigs:
+
+        if not contigId:
+            continue
+
+        tool_inputs = {
+            "mode|mode": "individual",
+            "mode|in|custom": "false",
+            "mode|in|inputs": {
+                "src": "hda",
+                "id": contigId
+            }
+        }
+
+        job = gi.tools.run_tool(
+            history_id=history_id,
+            tool_id="toolshed.g2.bx.psu.edu/repos/iuc/quast/quast/5.3.0+galaxy1",
+            tool_inputs=tool_inputs
+        )
+
+        job_id = job["jobs"][0]["id"]
+        esperar_finalizacion(gi, job_id)
+
+        info = gi.jobs.show_job(job_id)
+        outputs = info.get("outputs", {})
+
+        reporte = outputs.get("report_html")
+        if not reporte:
+            raise Exception("QUAST no generó report_html")
+
+        # report_html SIEMPRE es lista
+        reporteId = reporte[0]["id"]
+
+        raw_bytes = gi.datasets.download_dataset(
+            reporteId,
+            file_path=None,
+            use_default_filename=False
+        )
+
+        html_content = raw_bytes.decode("latin-1")
+
+        soup = BeautifulSoup(html_content, "html.parser")
+
+        n50 = None
+        l50 = None
+
+        for tr in soup.find_all("tr", class_="content-row"):
+            tds = tr.find_all("td")
+            if len(tds) < 2:
+                continue
+
+            nombre = tds[0].get_text(strip=True)
+            valor = tds[1].get_text(strip=True).replace(",", "")
+
+            if nombre == "N50":
+                n50 = valor
+            elif nombre == "L50":
+                l50 = valor
+
+        datasets_calidad[contigId] = {
+            "n50": int(n50) if n50 else 0,
+            "l50": int(l50) if l50 else 999999
+        }
+
+        results[contigId] = {
+            "job_id": job_id,
+            "reporte_id": reporteId,
+            "n50": datasets_calidad[contigId]["n50"],
+            "l50": datasets_calidad[contigId]["l50"]
+        }
+
+    # 🔥 ELECCIÓN DEL MEJOR DATASET
+    c1, c2 = contigs[0], contigs[1]
+
+    if datasets_calidad[c1]["n50"] > datasets_calidad[c2]["n50"]:
+        winner = c1
+    else:
+        winner = c2
+
+    return results, winner"""
 
 # Metodo el proceso completo
 def ejecutar_workflow(request):
@@ -341,13 +457,13 @@ def ejecutar_workflow(request):
         results = {}
 
         #Ejecución de los procesos 
-        try:
-            fastqc_inicial_id1, fastqc_inicial_id2, fastqc_inicial_outputs1, fastqc_inicial_outputs2 = ejecutar_fastqc(history_id, datasetID, datasetID2)
-            results["fastqc"] = {
-                "fastqc_id1" : fastqc_inicial_id1,
-                "fastqc_outputs1" : fastqc_inicial_outputs1,
-                "fastqc_id2" : fastqc_inicial_id2,
-                "fastqc_outputs2" : fastqc_inicial_outputs2
+        try:            
+            fasqc_results_inicial = ejecutar_fastqc(history_id, [datasetID, datasetID2])
+            results["fastqc_inicial"] = {
+                "fastqc_id1" : fasqc_results_inicial[datasetID]["job_id"],
+                "fastqc_outputs1" : fasqc_results_inicial[datasetID]["output_datasets"],
+                "fastqc_id2" : fasqc_results_inicial[datasetID2]["job_id"],
+                "fastqc_outputs2" : fasqc_results_inicial[datasetID2]["output_datasets"]
             }
         except Exception as e:
             return render(request, "error.html", {"mensaje": f"Error al ejecutar FastQC inicial: {str(e)}"})
@@ -371,33 +487,50 @@ def ejecutar_workflow(request):
             return render(request, "error.html", {"mensaje": f"Error al ejecutar Trimmomatic: {str(e)}"})
 
         try:
-            fastqc_final_id1, fastqc_final_id2, fastqc_final_outputs1, fastqc_final_outputs2 = ejecutar_fastqc(history_id, paired_R1, paired_R2)
-            results["fastqc"] = {
-                "fastqc_id1" : fastqc_final_id1,
-                "fastqc_outputs1" : fastqc_final_outputs1,
-                "fastqc_id2" : fastqc_final_id2,
-                "fastqc_outputs2" : fastqc_final_outputs2
+            fasqc_results_final = ejecutar_fastqc(history_id, [paired_R1, paired_R2])
+            results["fastqc_final"] = {
+                "fastqc_id1" : fasqc_results_final[paired_R1]["job_id"],
+                "fastqc_outputs1" : fasqc_results_final[paired_R1]["output_datasets"],
+                "fastqc_id2" : fasqc_results_final[paired_R2]["job_id"],
+                "fastqc_outputs2" : fasqc_results_final[paired_R2]["output_datasets"]
             }
         except Exception as e:
             return render(request, "error.html", {"mensaje": f"Error al ejecutar FastQC final: {str(e)}"})
 
         try:
-            spades_id, sapades_outputs, shovill_contigs = ejecutar_spades(history_id, paired_R1, paired_R2)
+            spades_id, spades_outputs, spades_contigs = ejecutar_shovill(history_id, paired_R1, paired_R2, "spades")
             results["spades"] = {
                 "spades_id": spades_id,
-                "spades_outputs": sapades_outputs
+                "spades_outputs": spades_outputs
             }
         except Exception as e:
             return render(request, "error.html", {"mensaje": f"Error al ejecutar SPAdes: {str(e)}"})
 
         try:
-            velvet_id, velvet_outputs, velvet_contigs = ejecutar_velvet(history_id, paired_R1, paired_R2)
+            velvet_id, velvet_outputs, velvet_contigs = ejecutar_shovill(history_id, paired_R1, paired_R2, "velvet")
             results["velvet"] = {
                 "velvet_id": velvet_id,
                 "velvet_outputs": velvet_outputs
             }
         except Exception as e:
-            return render(request, "error.html", {"mensaje": f"Error al ejecutar Velvet: {str(e)}"})
+            return render(request, "error.html", {"mensaje": f"Error al ejecutar velvet: {str(e)}"})
+
+        try: 
+            quast_results = ejecutar_quast(history_id, [spades_contigs, velvet_contigs])
+
+            results["quast"] = {
+                "reporteSpades": {"spades_contigs": spades_contigs,
+                "job_id": quast_results[spades_contigs]["job_id"],
+                "output_datasets": quast_results[spades_contigs]["output_datasets"]
+                },
+                
+                "reporteVelvet": {"velvet_contigs": velvet_contigs,
+                "job_id": quast_results[velvet_contigs]["job_id"],
+                "output_datasets": quast_results[velvet_contigs]["output_datasets"]
+                } 
+            }
+        except Exception as e:
+            return render(request, "error.html", {"mensaje": f"Error al ejecutar Quast: {str(e)}"})
 
         return render(request, "resultado_fastqc.html",{
             "history_id": history_id, 
@@ -616,3 +749,41 @@ def ver_parametros_permitidos_tool(request, id_tool):
     gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
     info_tool = gi.tools.show_tool(tool_id=id_tool, io_details=True)
     return JsonResponse(info_tool)
+
+
+from django.shortcuts import render
+
+"""def pruebas_quast(request):
+
+    if request.method == "POST":
+        history_id = request.POST.get("history_id")
+        dataset_1 = request.POST.get("dataset_1")
+        dataset_2 = request.POST.get("dataset_2")
+
+        if not (history_id and dataset_1 and dataset_2):
+            return render(request, "error.html", {
+                "mensaje": "Faltan datos para ejecutar QUAST."
+            })
+
+        try:
+            contigs = [dataset_1, dataset_2]
+
+            results, winner = ejecutar_quast(
+                history_id=history_id,
+                contigs=contigs
+            )
+
+            return render(request, "resultadoPruebasQuast.html", {
+                "results": results,
+                "winner": winner,
+                "dataset_1": dataset_1,
+                "dataset_2": dataset_2
+            })
+
+        except Exception as e:
+            return render(request, "error.html", {
+                "mensaje": f"Error al ejecutar QUAST: {str(e)}"
+            })
+
+    # GET → mostrar formulario
+    return render(request, "pruebasQuast.html")"""
