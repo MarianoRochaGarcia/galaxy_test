@@ -3,8 +3,9 @@ import os
 import tempfile
 import re
 import time
+import pandas as pd
 from django.conf import settings
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from bioblend.galaxy import GalaxyInstance
 from django.shortcuts import render
 from decouple import config
@@ -210,7 +211,7 @@ def ejecutar_shovill(history_id, paired_R1, paired_R2, type_assembler):
         "library|lib_type": "paired",
         "library|R1": {"src": "hda", "id": paired_R1,},
         "library|R2": {"src": "hda", "id": paired_R2,},
-        "--assembler": type_assembler
+        "assembler": type_assembler
     }
 
     job = gi.tools.run_tool(
@@ -242,7 +243,8 @@ def ejecutar_quast(history_id, contigs):
         tool_inputs = {
             "mode|mode": "individual",
             "mode|in|custom": "false",
-            "mode|in|inputs": {"src": "hda","id": contigId}
+            "mode|in|inputs": {"src": "hda","id": contigId},
+            "output_files": ["tabular"]
         }
 
         job = gi.tools.run_tool(
@@ -253,138 +255,61 @@ def ejecutar_quast(history_id, contigs):
 
         job_id = job["jobs"][0]["id"]
         esperar_finalizacion(gi, job_id)
+
         info = gi.jobs.show_job(job_id)
 
         outputs = info.get("outputs", {})
         output_datasets = list(outputs.values())
 
-        reporteId = outputs.get("report_html", {}).get("id")
+        id_tsv = outputs['report_tabular']['id']
+        ruta = '/tmp/report.tsv'
+
+        gi.datasets.download_dataset(id_tsv, file_path=ruta, use_default_filename=False)
+
+        data_tsv = pd.read_csv(ruta, sep="\t", index_col=0)
+
+        n50 = data_tsv.loc["N50"].values[0]
+        l50 = data_tsv.loc["L50"].values[0]
+
+        datasets_calidad[contigId] = {'N50':n50, 'L50': l50}
+
+        os.remove(ruta)
 
         results[contigId] = {"job_id": job_id, "output_datasets": output_datasets}
 
-        html_content = gi.datasets.show_dataset(reporteId)
-        soup = BeautifulSoup(html_content, 'html.parser')
+        if len(datasets_calidad) == 2:
 
-        n50 = None
-        l50 = None
+            if datasets_calidad[contigs[0]]['N50'] > datasets_calidad[contigs[1]]['N50'] and datasets_calidad[contigs[0]]['L50'] < datasets_calidad[contigs[1]]['L50'] :
+                winner = contigs[0]
 
-        for tr in soup.find_all("tr", class_="content-row"):
-            tds = tr.find_all("td")
-            if len(tds) < 2:
-                continue
+            elif datasets_calidad[contigs[0]]['N50'] > datasets_calidad[contigs[1]]['N50']:
+                winner = contigs[0]
 
-            nombre = tds[0].get_text(strip=True)
-
-            if nombre == "N50":
-                n50 = tds[1].get("number")
-
-            elif nombre == "L50":
-                l50 = tds[1].get("number")
-        
-            if n50 is not None and l50 is not None:
-                break
-        
-        datasets_calidad[contigId] = {"n50": int(n50), "l50": int(l50)}
-
-    if datasets_calidad[contigs[0]]["n50"] > datasets_calidad[contigs[1]]["n50"] and datasets_calidad[contigs[0]]["l50"] < datasets_calidad[contigs[1]]["l50"]:
-        winner = contigs[0]
-    
-    elif datasets_calidad[contigs[0]]["n50"] > datasets_calidad[contigs[1]]["n50"]:
-        winner = contigs[0]
-
-    else:
-        winner = contigs[1] 
+            else:
+                winner = contigs[1]
 
     return results, winner
 
-"""
-def ejecutar_quast(history_id, contigs):
+def ejecutar_augustus(history_id, shovill):
+    gi = GalaxyInstance(url = GALAXY_URL, key = GALAXY_API_KEY)
 
-    gi = GalaxyInstance(url=GALAXY_URL, key=GALAXY_API_KEY)
+    tool_inputs = {
+        "model|augustus_mode" : "history",
+        "model|custom_model" : {"src": "hda", "id": shovill}
+    }
 
-    results = {}
-    datasets_calidad = {}
+    job = gi.tools.run_tool(
+    history_id=history_id,
+    tool_id="toolshed.g2.bx.psu.edu/repos/bgruening/augustus/augustus/3.5.0+galaxy0",
+    tool_inputs=tool_inputs,
+    )
 
-    for contigId in contigs:
+    job_id = job["jobs"][0]["id"]
+    esperar_finalizacion(gi, job_id)
+    info = gi.datasets.show_dataset(job_id)
+    outputs = info.get("outputs", {}) 
 
-        if not contigId:
-            continue
-
-        tool_inputs = {
-            "mode|mode": "individual",
-            "mode|in|custom": "false",
-            "mode|in|inputs": {
-                "src": "hda",
-                "id": contigId
-            }
-        }
-
-        job = gi.tools.run_tool(
-            history_id=history_id,
-            tool_id="toolshed.g2.bx.psu.edu/repos/iuc/quast/quast/5.3.0+galaxy1",
-            tool_inputs=tool_inputs
-        )
-
-        job_id = job["jobs"][0]["id"]
-        esperar_finalizacion(gi, job_id)
-
-        info = gi.jobs.show_job(job_id)
-        outputs = info.get("outputs", {})
-
-        reporte = outputs.get("report_html")
-        if not reporte:
-            raise Exception("QUAST no generó report_html")
-
-        # report_html SIEMPRE es lista
-        reporteId = reporte[0]["id"]
-
-        raw_bytes = gi.datasets.download_dataset(
-            reporteId,
-            file_path=None,
-            use_default_filename=False
-        )
-
-        html_content = raw_bytes.decode("latin-1")
-
-        soup = BeautifulSoup(html_content, "html.parser")
-
-        n50 = None
-        l50 = None
-
-        for tr in soup.find_all("tr", class_="content-row"):
-            tds = tr.find_all("td")
-            if len(tds) < 2:
-                continue
-
-            nombre = tds[0].get_text(strip=True)
-            valor = tds[1].get_text(strip=True).replace(",", "")
-
-            if nombre == "N50":
-                n50 = valor
-            elif nombre == "L50":
-                l50 = valor
-
-        datasets_calidad[contigId] = {
-            "n50": int(n50) if n50 else 0,
-            "l50": int(l50) if l50 else 999999
-        }
-
-        results[contigId] = {
-            "job_id": job_id,
-            "reporte_id": reporteId,
-            "n50": datasets_calidad[contigId]["n50"],
-            "l50": datasets_calidad[contigId]["l50"]
-        }
-
-    # 🔥 ELECCIÓN DEL MEJOR DATASET
-    c1, c2 = contigs[0], contigs[1]
-
-    if datasets_calidad[c1]["n50"] > datasets_calidad[c2]["n50"]:
-        winner = c1
-    else:
-        winner = c2
-
-    return results, winner"""
+    return job_id, outputs
 
 # Metodo el proceso completo
 def ejecutar_workflow(request):
@@ -516,7 +441,7 @@ def ejecutar_workflow(request):
             return render(request, "error.html", {"mensaje": f"Error al ejecutar velvet: {str(e)}"})
 
         try: 
-            quast_results = ejecutar_quast(history_id, [spades_contigs, velvet_contigs])
+            quast_results, winner = ejecutar_quast(history_id, [spades_contigs, velvet_contigs])
 
             results["quast"] = {
                 "reporteSpades": {"spades_contigs": spades_contigs,
@@ -531,6 +456,16 @@ def ejecutar_workflow(request):
             }
         except Exception as e:
             return render(request, "error.html", {"mensaje": f"Error al ejecutar Quast: {str(e)}"})
+        
+        try: 
+            augustus_id, augustus_outputs = ejecutar_augustus(history_id, winner)
+            results["augustus"]= {
+                "augustus_id": augustus_id,
+                "augustus_outputs": augustus_outputs
+            }
+
+        except Exception as e: 
+            return render(request, "error.html", {"mensaje": f"Error al ejecutar Augustus: {str(e)}"})
 
         return render(request, "resultado_fastqc.html",{
             "history_id": history_id, 
@@ -631,7 +566,6 @@ def ejecutar_trimmomatic_single(request,history_id):
     }
     return JsonResponse(response, safe=False)
 
-
 def ejecutar_bowtie2_single(request, history_id):
     
     gi = GalaxyInstance(url= GALAXY_URL, key=GALAXY_API_KEY)  
@@ -713,7 +647,6 @@ def ejecutar_bowtie2_single(request, history_id):
 
     return bowtie_job_id, outputs_dict, unaligned_R1, unaligned_R2
 
-
 def show_dataset(request, id):
     
     gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
@@ -749,41 +682,3 @@ def ver_parametros_permitidos_tool(request, id_tool):
     gi = GalaxyInstance(url=GALAXY_URL, key= GALAXY_API_KEY)
     info_tool = gi.tools.show_tool(tool_id=id_tool, io_details=True)
     return JsonResponse(info_tool)
-
-
-from django.shortcuts import render
-
-"""def pruebas_quast(request):
-
-    if request.method == "POST":
-        history_id = request.POST.get("history_id")
-        dataset_1 = request.POST.get("dataset_1")
-        dataset_2 = request.POST.get("dataset_2")
-
-        if not (history_id and dataset_1 and dataset_2):
-            return render(request, "error.html", {
-                "mensaje": "Faltan datos para ejecutar QUAST."
-            })
-
-        try:
-            contigs = [dataset_1, dataset_2]
-
-            results, winner = ejecutar_quast(
-                history_id=history_id,
-                contigs=contigs
-            )
-
-            return render(request, "resultadoPruebasQuast.html", {
-                "results": results,
-                "winner": winner,
-                "dataset_1": dataset_1,
-                "dataset_2": dataset_2
-            })
-
-        except Exception as e:
-            return render(request, "error.html", {
-                "mensaje": f"Error al ejecutar QUAST: {str(e)}"
-            })
-
-    # GET → mostrar formulario
-    return render(request, "pruebasQuast.html")"""
