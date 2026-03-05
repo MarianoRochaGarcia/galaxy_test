@@ -15,7 +15,7 @@ urlpatterns = [
     path('get_jobs_history/<str:id>', views.get_jobs_history, name="get_jobs_history"),
     # path('probar_trimmomatic/', views.probar_trimmomatic, name='probar_trimmomatic'),
     path("user/", include('user_app.urls')),
-    path("pruebas_quast/", views.pruebas_quast, name="pruebas_quast"),
+    path("ejecutar_augustus_view/", views.ejecutar_augustus_view, name="ejecutar_augustus_view"),
 
     
     # URLS Para desarollo

@@ -294,8 +294,7 @@ def ejecutar_augustus(history_id, shovill):
     gi = GalaxyInstance(url = GALAXY_URL, key = GALAXY_API_KEY)
 
     tool_inputs = {
-        "model|augustus_mode" : "history",
-        "model|custom_model" : {"src": "hda", "id": shovill}
+        "input_genome" : {"src": "hda", "id": shovill}
     }
 
     job = gi.tools.run_tool(
