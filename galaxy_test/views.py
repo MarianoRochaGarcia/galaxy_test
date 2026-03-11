@@ -564,7 +564,7 @@ def ejecutar_trimmomatic_single(request,history_id):
         "info": info
     }
     return JsonResponse(response, safe=False)
-
+"""    
 def ejecutar_bowtie2_single(request, history_id):
     
     gi = GalaxyInstance(url= GALAXY_URL, key=GALAXY_API_KEY)  
@@ -645,6 +645,7 @@ def ejecutar_bowtie2_single(request, history_id):
     unaligned_R2 = outputs_dict.get("unaligned_reads_2")
 
     return bowtie_job_id, outputs_dict, unaligned_R1, unaligned_R2
+"""
 
 def show_dataset(request, id):
     

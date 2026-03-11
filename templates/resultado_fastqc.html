@@ -2,8 +2,7 @@
 
 <h3>Historia ID: {{ history_id }}</h3>
 
-<!-- FastQC -->
-<h3>🔹 FastQC</h3>
+<h3>FastQC</h3>
 <p><strong>Job ID:</strong> {{ job_results.fastqc.fastqc_id }}</p>
 <p><strong>Datasets generados:</strong></p>
 <ul>
@@ -12,8 +11,7 @@
 {% endfor %}
 </ul>
 
-<!-- Trimmomatic -->
-<h3>🔹 Trimmomatic</h3>
+<h3>Trimmomatic</h3>
 <p><strong>Job ID:</strong> {{ job_results.trimmomatic.trimmomatic_id }}</p>
 <p><strong>Dataset principal ID:</strong> {{ job_results.trimmomatic.trimmomatic_output_id }}</p>
 <p><strong>Todos los datasets generados:</strong></p>
@@ -23,8 +21,7 @@
 {% endfor %}
 </ul>
 
-<!-- Bowtie2 -->
-<h3>🔹 Bowtie2</h3>
+<h3>Bowtie2</h3>
 <p><strong>Job ID:</strong> {{ job_results.bowtie.bowtie_id }}</p>
 <p><strong>Datasets generados:</strong></p>
 <ul>
